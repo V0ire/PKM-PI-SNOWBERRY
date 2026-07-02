@@ -1,0 +1,96 @@
+export type Page = "dashboard" | "thresholds" | "history" | "growth";
+export type ThemeMode = "light" | "dark";
+
+export type ConnectionState = "online" | "stale" | "offline";
+export type SensorStatusKey = "safe" | "warning" | "danger" | "unknown";
+export type ActuatorAvailability = "ready" | "offline_disabled" | "sending" | "error";
+export type FormState = "clean" | "dirty" | "invalid" | "saving" | "saved" | "error";
+
+export type ActuatorKey = "growlight" | "pump" | "mist" | "fan";
+export type ActuatorMode = "AUTO" | "MANUAL";
+
+export type ThresholdConfig = {
+  temp_low: number;
+  temp_high: number;
+  rh_low: number;
+  rh_high: number;
+  soil_low: number;
+  soil_high: number;
+  lux_low: number;
+  lux_high: number;
+  pump_pulse_ms: number;
+  soak_period_ms: number;
+  planting_date: string;
+  updated_at: number;
+  updated_by: string;
+};
+
+export type RealtimeStatus = {
+  sensors: {
+    temperature_c: number | null;
+    humidity_pct: number | null;
+    lux: number | null;
+    soil_pct: number | null;
+    psu_voltage: number | null;
+  };
+  actuators: Record<
+    ActuatorKey,
+    {
+      mode: ActuatorMode;
+      state: boolean;
+      manual_until: number | null;
+    }
+  >;
+  device: {
+    online: boolean;
+    wifi_rssi: number;
+    firmware_version: string;
+    uptime_seconds: number;
+    nvs_synced: boolean;
+  };
+  fault: {
+    active_code: string | null;
+    active_message: string | null;
+    last_fault_code?: string | null;
+    last_fault_at?: number | null;
+  };
+  last_seen: number;
+};
+
+export type TelemetryPoint = {
+  t: number;
+  h: number;
+  l: number;
+  s: number;
+  gl: boolean;
+  p: boolean;
+  m: boolean;
+  f: boolean;
+  ts: number;
+};
+
+export type SensorMetric = {
+  id: "temperature" | "humidity" | "light" | "soil";
+  label: string;
+  value: string;
+  unit: string;
+  status: SensorStatusKey;
+  meaning: string;
+  action: string;
+  issue: string | null;
+  severity: number;
+};
+
+export type DashboardSummary = {
+  title: string;
+  detail: string;
+  action: string;
+  tone: SensorStatusKey;
+};
+
+export type ActuatorCopy = {
+  label: string;
+  automaticText: string;
+  manualModalTitle: string;
+  manualModalBody: string;
+};
