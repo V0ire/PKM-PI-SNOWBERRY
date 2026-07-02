@@ -1,0 +1,16 @@
+Ikuti AGENTS.md.
+
+Gunakan skill:
+- $snowberry-project-guardrails
+- $snowberry-frontend-design
+- $snowberry-ui-petani
+- $snowberry-react-vite-builder
+- $snowberry-debug-review
+
+Tugas awal:
+Kerjakan hanya di web-app/.
+Buat UI mock Snowberry mobile-first Bahasa Indonesia.
+Wajib mengikuti docs/02-frontend/DESIGN-starbucks.md.
+Jangan integrasi Firebase dulu.
+Gunakan mock data yang bentuknya mirip api-contract.md.
+Jangan membuat fitur di luar MVP.

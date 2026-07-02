@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.*.local
+.DS_Store
+.vscode/
+.idea/
+.pio/
+firmware/**/.pio/
+firebase/.runtimeconfig.json
+.codex-cache/
+*.log
