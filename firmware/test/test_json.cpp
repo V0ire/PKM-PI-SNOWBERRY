@@ -1,7 +1,11 @@
+#include <Arduino.h>
 #include <cstdio>
 #include <cstring>
 #include "status_json.h"
 #include "actuators.h"
+#include <vector>
+
+std::vector<PinRecord> g_pinOps;
 
 static int failed=0;
 #define CHECK(c,m) do{ if(!(c)){printf("FAIL: %s\n",m);failed++;} else printf("ok: %s\n",m);}while(0)

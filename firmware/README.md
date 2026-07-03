@@ -11,7 +11,7 @@ Sumber kebenaran:
 ## Struktur
 - `include/config.h` — pin map, polaritas, timing (dari wiring-schematic).
 - `include/types.h` — Thresholds, SensorReading, ActuatorState, Fault.
-- `src/actuators.cpp` — safe-state boot, polaritas HIGH/LOW, min ON/OFF time.
+- `src/actuators.cpp` — safe-state boot (menulis OFF level sebelum pinMode), polaritas HIGH/LOW, min ON/OFF time.
 - `src/control.cpp` — logika inti (bang-bang + hysteresis + pulse/soak).
 - `src/sensors.cpp` — SHT30, BH1750, soil ADC, PSU divider, I2C recovery.
 - `src/storage.cpp` — NVS threshold + kalibrasi soil.
@@ -50,8 +50,8 @@ Sebelum kalibrasi ada, soil dianggap invalid dan pump AUTO OFF.
 ```
 bash firmware/test/run_host_tests.sh
 ```
-Menguji logika kontrol (23 cek) dan builder JSON kontrak (11 cek) memakai
-stub Arduino/actuators.
+Menguji logika kontrol & timing manual (27 cek), urutan boot safe-state (1 cek), dan builder JSON kontrak (11 cek) memakai
+mock Arduino layer.
 
 ## Build ke ESP32
 ```

@@ -34,6 +34,7 @@ bool online();                             // WiFi + Firebase siap
 bool timeSynced(int64_t& epochMsOut, uint8_t& hourOut);
 
 // Ambil command manual terbaru (jika command_id baru). Return false jika tidak ada.
+// Catatan: Implementasi wajib mengisi `out.received_at_ms = millis();` saat command baru terdeteksi.
 bool pollCommand(control::ManualCommand& out, char* lastIdOut, size_t idCap);
 
 // Ambil thresholds terbaru dari server. Return false jika tidak ada/invalid.

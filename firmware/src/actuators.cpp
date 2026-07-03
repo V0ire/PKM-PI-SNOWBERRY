@@ -28,12 +28,13 @@ namespace actuators {
 
 void initSafeState() {
   // Spare SSR juga dipaksa OFF walau tanpa beban.
-  pinMode(pins::SPARE_SSR, OUTPUT);
+  // Latch OFF level dulu sebelum pinMode OUTPUT untuk menghindari brief active level saat boot.
   digitalWrite(pins::SPARE_SSR, polarity::SSR_OFF);
+  pinMode(pins::SPARE_SSR, OUTPUT);
 
   for (auto& c : g_chan) {
-    pinMode(c.pin, OUTPUT);
     digitalWrite(c.pin, c.offLevel);
+    pinMode(c.pin, OUTPUT);
     c.on = false;
     c.lastChanged = millis();
   }

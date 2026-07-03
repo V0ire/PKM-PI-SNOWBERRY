@@ -18,6 +18,7 @@ struct ManualCommand {
   bool state = false;
   uint32_t duration_ms = 0;
   int64_t manual_until_epoch = 0;
+  uint32_t received_at_ms = 0;   // basis millis() saat command diterima/diterapkan
 };
 
 // Konteks waktu untuk photoperiod + expiry manual.

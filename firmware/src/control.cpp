@@ -269,16 +269,19 @@ static bool applyManual(const ManualCommand& cmd, const SensorReading& s,
                         const TimeCtx& time, uint32_t nowMs, Fault& outFault) {
   if (!cmd.valid || cmd.mode != Mode::MANUAL) return false;
 
+  uint32_t active_duration = cmd.duration_ms;
+  if (active_duration == 0 || active_duration > timing::MANUAL_MAX_MS) {
+    active_duration = timing::MANUAL_MAX_MS;
+  }
+
   // Expiry: pakai epoch jika synced, else fallback durasi via millis().
   bool expired = false;
   if (time.synced && cmd.manual_until_epoch > 0) {
-    expired = time.epoch_ms >= cmd.manual_until_epoch;
+    expired = (time.epoch_ms >= cmd.manual_until_epoch);
+  } else {
+    expired = (nowMs - cmd.received_at_ms >= active_duration);
   }
-  // durasi fallback selalu dicek juga sebagai batas keras 30 menit.
-  // (handler command menyimpan waktu terima; di sini disederhanakan via duration)
-  if (cmd.duration_ms == 0 || cmd.duration_ms > timing::MANUAL_MAX_MS) {
-    // durasi tidak masuk akal -> tolak
-  }
+
   if (expired) { outFault = Fault::COMMAND_EXPIRED; return false; }
 
   // Hard safety tetap menang: pump manual ON dilarang jika soil invalid.

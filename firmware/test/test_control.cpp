@@ -1,7 +1,13 @@
+#include <Arduino.h>
 #include <cstdio>
 #include <cassert>
+#include <vector>
 #include "control.h"
 #include "actuators.h"
+#include "config.h"
+
+// Definisikan global pin operations log dari Arduino.h stub.
+std::vector<PinRecord> g_pinOps;
 
 using AK = ActuatorKey;
 static int failed = 0;
@@ -111,6 +117,101 @@ int main() {
   control::ManualCommand ecmd=gcmd; ecmd.manual_until_epoch=tsync.epoch_ms-1;
   control::step(t,s,ecmd,tsync,11000000,f);
   CHECK(f==Fault::COMMAND_EXPIRED, "manual expired -> fault COMMAND_EXPIRED");
+
+  // ==========================================================================
+  // BLOCKER AUDIT TEST CASES
+  // ==========================================================================
+
+  // 14) Manual command saat time.synced=false BELUM expired sebelum duration_ms
+  {
+    actuators::initSafeState();
+    s = mkSensor();
+    control::TimeCtx noSync; noSync.synced = false; noSync.epoch_ms = 0;
+    control::ManualCommand mcmd;
+    mcmd.valid = true;
+    mcmd.key = AK::PUMP;
+    mcmd.mode = Mode::MANUAL;
+    mcmd.state = true;
+    mcmd.duration_ms = 100000; // 100 detik
+    mcmd.received_at_ms = 50000; // diterima pada t = 50 detik
+    
+    // Test pada t = 140 detik (delta 90 detik, < 100 detik duration) -> Belum expired, pump ON
+    control::step(t, s, mcmd, noSync, 140000, f);
+    CHECK(actuators::isOn(AK::PUMP), "noSync manual: PUMP ON sebelum durasi berakhir");
+    CHECK(f == Fault::NONE, "noSync manual: tidak ada fault sebelum durasi berakhir");
+  }
+
+  // 15) Manual command saat time.synced=false HARUS expired setelah duration_ms
+  {
+    actuators::initSafeState();
+    s = mkSensor();
+    control::TimeCtx noSync; noSync.synced = false; noSync.epoch_ms = 0;
+    control::ManualCommand mcmd;
+    mcmd.valid = true;
+    mcmd.key = AK::PUMP;
+    mcmd.mode = Mode::MANUAL;
+    mcmd.state = true;
+    mcmd.duration_ms = 100000;
+    mcmd.received_at_ms = 50000;
+    
+    // Test pada t = 150000 (delta 100 detik = duration) -> Expired, pump AUTO/OFF
+    control::step(t, s, mcmd, noSync, 150000, f);
+    CHECK(!actuators::isOn(AK::PUMP), "noSync manual: PUMP OFF setelah durasi berakhir");
+    CHECK(f == Fault::COMMAND_EXPIRED, "noSync manual: fault COMMAND_EXPIRED diset");
+  }
+
+  // 16) Manual command tidak mengalahkan sensor invalid safety
+  {
+    actuators::initSafeState();
+    s = mkSensor();
+    s.soil_valid = false; // sensor rusak/lepas
+    control::TimeCtx noSync; noSync.synced = false;
+    control::ManualCommand mcmd;
+    mcmd.valid = true;
+    mcmd.key = AK::PUMP;
+    mcmd.mode = Mode::MANUAL;
+    mcmd.state = true;
+    mcmd.duration_ms = 100000;
+    mcmd.received_at_ms = 50000;
+
+    // Walau manual state = true dan belum expired, sensor invalid wajib mematikan pompa
+    control::step(t, s, mcmd, noSync, 60000, f);
+    CHECK(!actuators::isOn(AK::PUMP), "manual command ditolak/OFF jika sensor invalid");
+    CHECK(f == Fault::COMMAND_REJECTED_SAFETY, "fault COMMAND_REJECTED_SAFETY aktif");
+  }
+
+  // 17) Safe boot init menulis OFF level sebelum pinMode OUTPUT (Blocker 1)
+  {
+    clearPinOps();
+    actuators::initSafeState();
+    
+    // Verifikasi urutan operasi untuk semua pin aktuator yang ada.
+    // Untuk setiap pin: WRITE_LOW/HIGH harus muncul sebelum MODE_OUTPUT.
+    bool orderOk = true;
+    uint8_t targetPins[] = { pins::GROWLIGHT, pins::PUMP, pins::MIST, pins::FAN, pins::SPARE_SSR };
+    
+    for (uint8_t pin : targetPins) {
+      int firstWriteIdx = -1;
+      int firstModeIdx = -1;
+      for (size_t i = 0; i < g_pinOps.size(); i++) {
+        if (g_pinOps[i].pin == pin) {
+          if (g_pinOps[i].op == PinOp::WRITE_LOW || g_pinOps[i].op == PinOp::WRITE_HIGH) {
+            if (firstWriteIdx == -1) firstWriteIdx = i;
+          }
+          if (g_pinOps[i].op == PinOp::MODE_OUTPUT) {
+            if (firstModeIdx == -1) firstModeIdx = i;
+          }
+        }
+      }
+      
+      // Pastikan write dilakukan sebelum pinMode
+      if (firstWriteIdx == -1 || firstModeIdx == -1 || firstWriteIdx > firstModeIdx) {
+        printf("FAIL safe boot order pin %d: write_idx=%d, mode_idx=%d\n", pin, firstWriteIdx, firstModeIdx);
+        orderOk = false;
+      }
+    }
+    CHECK(orderOk, "Safe boot: menulis offLevel sebelum pinMode OUTPUT");
+  }
 
   printf("\n%s\n", failed==0 ? "ALL PASSED" : "SOME FAILED");
   return failed==0 ? 0 : 1;
