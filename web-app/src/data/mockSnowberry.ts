@@ -49,6 +49,8 @@ export const INITIAL_STATUS: RealtimeStatus = {
 export const ACTUATOR_COPY: Record<ActuatorKey, ActuatorCopy> = {
   growlight: {
     label: "Lampu Tanam",
+    helpingText: "Membantu bunga dan daun tetap mendapat cahaya saat pagi mendung atau sore mulai gelap.",
+    activeText: "Lampu sedang membantu menambah cahaya agar pertumbuhan tidak melemah.",
     automaticText: "Lampu menyala saat cahaya kurang, lalu mati saat cahaya sudah cukup.",
     manualModalTitle: "Ubah Lampu Tanam ke Manual?",
     manualModalBody:
@@ -56,24 +58,30 @@ export const ACTUATOR_COPY: Record<ActuatorKey, ActuatorCopy> = {
   },
   pump: {
     label: "Pompa Air",
+    helpingText: "Menjaga media tanam tetap lembap tanpa membuat akar tergenang.",
+    activeText: "Pompa sedang menyiram bertahap. Beri waktu agar air meresap ke media.",
     automaticText: "Pompa menyiram bertahap saat media mulai kering agar akar tidak tergenang.",
     manualModalTitle: "Ubah Pompa Air ke Manual?",
     manualModalBody:
       "Pompa tidak akan mengikuti kelembapan media sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
   },
   mist: {
-    label: "Kabut",
-    automaticText: "Kabut menyala saat udara terlalu kering dan berhenti saat kelembapan cukup.",
-    manualModalTitle: "Ubah Kabut ke Manual?",
+    label: "Pengatur Kelembapan",
+    helpingText: "Menyemprotkan kabut halus dan meniupkannya agar kelembapan merata.",
+    activeText: "Pengatur kelembapan sedang membantu udara tetap nyaman.",
+    automaticText: "Pengatur kelembapan menyala saat udara terlalu kering.",
+    manualModalTitle: "Ubah Pengatur Kelembapan ke Manual?",
     manualModalBody:
-      "Kabut tidak akan mengikuti kelembapan udara sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
+      "Pengatur kelembapan tidak akan mengikuti kelembapan udara sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
   },
   fan: {
-    label: "Kipas",
-    automaticText: "Kipas membantu menurunkan suhu atau kelembapan berlebih.",
-    manualModalTitle: "Ubah Kipas ke Manual?",
+    label: "Kipas Pengatur Kelembapan",
+    helpingText: "Meniup kabut dari box pengatur kelembapan ke greenhouse.",
+    activeText: "Kipas pengatur kelembapan sedang membantu menyebarkan kabut.",
+    automaticText: "Kipas pengatur kelembapan bekerja bersama kabut saat kelembapan perlu dibantu.",
+    manualModalTitle: "Ubah Pengatur Kelembapan ke Manual?",
     manualModalBody:
-      "Kipas tidak akan mengikuti suhu dan kelembapan sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
+      "Pengatur kelembapan tidak akan mengikuti kelembapan udara sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
   },
 };
 

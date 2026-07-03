@@ -1,0 +1,55 @@
+rules_version = '2';
+// Snowberry Firestore rules — MVP satu greenhouse/satu device.
+// Sumber kontrak: docs/03-technical/api-contract.md
+//
+// Prinsip:
+// - User web hanya boleh baca/tulis device miliknya.
+// - User web hanya boleh menulis config/thresholds dan config/commands.
+// - Device (ESP32) hanya boleh menulis status/realtime dan telemetry,
+//   dan hanya baca config/* untuk device miliknya sendiri.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Mapping kepemilikan: users/{uid}.devices berisi deviceId yang diizinkan.
+    function isSignedIn() { return request.auth != null; }
+    function ownsDevice(deviceId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && deviceId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.devices;
+    }
+    // Device account: users/{uid}.role == "device" && users/{uid}.deviceId == deviceId
+    function isDeviceOf(deviceId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "device"
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.deviceId == deviceId;
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false; // dikelola via pairing/admin, bukan client langsung
+    }
+
+    match /devices/{deviceId} {
+      allow read: if ownsDevice(deviceId) || isDeviceOf(deviceId);
+
+      // Status realtime: hanya device yang menulis, user hanya membaca.
+      match /status/{docId} {
+        allow read: if ownsDevice(deviceId) || isDeviceOf(deviceId);
+        allow write: if isDeviceOf(deviceId);
+      }
+
+      // Telemetry: device menulis, user membaca.
+      match /telemetry/{docId} {
+        allow read: if ownsDevice(deviceId) || isDeviceOf(deviceId);
+        allow write: if isDeviceOf(deviceId);
+      }
+
+      // Config: user menulis (Batas Otomatis & Kontrol Manual), device membaca.
+      match /config/{docId} {
+        allow read: if ownsDevice(deviceId) || isDeviceOf(deviceId);
+        allow write: if ownsDevice(deviceId);
+      }
+    }
+  }
+}

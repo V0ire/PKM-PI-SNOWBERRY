@@ -1,16 +1,8 @@
 import { connectionVisual } from "../utils/status";
-import type { ConnectionState, ThemeMode } from "../types";
+import type { ConnectionState } from "../types";
 import { StatusPill } from "./StatusPill";
 
-export function TopBar({
-  connection,
-  theme,
-  onThemeToggle,
-}: {
-  connection: ConnectionState;
-  theme: ThemeMode;
-  onThemeToggle: () => void;
-}) {
+export function TopBar({ connection }: { connection: ConnectionState }) {
   const visual = connectionVisual[connection];
 
   return (
@@ -23,14 +15,6 @@ export function TopBar({
         </div>
       </div>
       <div className="topbar-actions">
-        <button
-          className="theme-toggle"
-          type="button"
-          onClick={onThemeToggle}
-          aria-label={theme === "dark" ? "Gunakan mode terang" : "Gunakan mode gelap"}
-        >
-          {theme === "dark" ? "Terang" : "Gelap"}
-        </button>
         <StatusPill label={visual.shortLabel} className={visual.className} />
       </div>
     </header>

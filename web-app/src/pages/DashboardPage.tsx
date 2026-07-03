@@ -1,12 +1,49 @@
+import { useState } from "react";
+import { CircleCheck, Clock, Droplets, Leaf, Power, Sprout, Sun, Thermometer } from "lucide-react";
 import type { ActuatorAvailability, ActuatorKey, ConnectionState, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
-import { ACTUATOR_ORDER } from "../data/mockSnowberry";
 import { formatTimeAgo } from "../utils/date";
-import { connectionVisual, getDashboardSummary, getSensorMetrics, sensorVisual } from "../utils/status";
+import { connectionVisual, getDashboardSummary, getGrowthPhaseInfo, getSensorMetrics, sensorVisual } from "../utils/status";
 import { ActuatorCard } from "../components/ActuatorCard";
 import { CardSkeleton, SummarySkeleton } from "../components/LoadingSkeleton";
+import { GreenhouseHero } from "../components/GreenhouseHero";
+import { HumidifierCard } from "../components/HumidifierCard";
 import { NoticeBanner } from "../components/NoticeBanner";
-import { SensorCard } from "../components/SensorCard";
+import { SensorGauge } from "../components/SensorGauge";
 import { StatusPill } from "../components/StatusPill";
+
+type SubTab = "today" | "plants" | "tools" | "check";
+
+const SENSOR_ICONS = {
+  temperature: Thermometer,
+  humidity: Droplets,
+  light: Sun,
+  soil: Leaf,
+};
+
+function sensorPercent(id: string, status: RealtimeStatus, thresholds: ThresholdConfig): number {
+  switch (id) {
+    case "temperature": {
+      const v = status.sensors.temperature_c;
+      if (v === null) return 0;
+      return Math.min(100, Math.max(0, ((v - 10) / 30) * 100));
+    }
+    case "humidity": {
+      const v = status.sensors.humidity_pct;
+      return v === null ? 0 : v;
+    }
+    case "light": {
+      const v = status.sensors.lux;
+      if (v === null) return 0;
+      return Math.min(100, (v / (thresholds.lux_high * 1.2)) * 100);
+    }
+    case "soil": {
+      const v = status.sensors.soil_pct;
+      return v === null ? 0 : v;
+    }
+    default:
+      return 0;
+  }
+}
 
 export function DashboardPage({
   status,
@@ -33,6 +70,8 @@ export function DashboardPage({
   onExtend: (key: ActuatorKey) => void;
   onAuto: (key: ActuatorKey) => void;
 }) {
+  const [subTab, setSubTab] = useState<SubTab>("today");
+
   if (isLoading) {
     return (
       <div className="page-stack dashboard-page">
@@ -40,24 +79,26 @@ export function DashboardPage({
         <section className="card-grid sensor-grid">
           <CardSkeleton />
           <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-        </section>
-        <section className="card-grid actuator-grid">
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
         </section>
       </div>
     );
   }
 
-  const metrics = getSensorMetrics(status, thresholds);
-  const summary = getDashboardSummary(metrics, status, connection, now);
+  const phase = getGrowthPhaseInfo(thresholds.planting_date, now);
+  const metrics = getSensorMetrics(status, thresholds, phase);
+  const summary = getDashboardSummary(metrics, status, connection, now, phase);
+  const importantMetrics = [...metrics].sort((a, b) => {
+    if (a.issue && !b.issue) return -1;
+    if (!a.issue && b.issue) return 1;
+    return b.severity - a.severity;
+  }).filter((metric) => metric.issue).slice(0, 2);
   const connectionCopy = connectionVisual[connection];
-  const autoCount = ACTUATOR_ORDER.filter((key) => status.actuators[key].mode === "AUTO").length;
-  const topPattern = history.length > 0 ? "Suhu paling tinggi sekitar pukul 13.00." : "Belum ada data riwayat hari ini.";
+  const activeTools = [
+    status.actuators.growlight.state && "Lampu",
+    status.actuators.pump.state && "Pompa",
+    (status.actuators.mist.state || status.actuators.fan.state) && "Pengatur Kelembapan",
+  ].filter(Boolean);
+  const maxChecks = Math.min(summary.checks.length, 3);
 
   return (
     <div className="page-stack dashboard-page">
@@ -73,59 +114,122 @@ export function DashboardPage({
         </NoticeBanner>
       )}
 
-      <section className={`summary-card ${sensorVisual[summary.tone].className}`}>
-        <div>
-          <p className="eyebrow">Kondisi Sekarang</p>
-          <h1>{summary.title}</h1>
-          <p>{summary.detail}</p>
-          <p className="summary-action">{summary.action}</p>
-        </div>
-        <div className="summary-meta-grid">
-          <div>
-            <span>Status Perangkat</span>
-            <strong>{connectionCopy.label}</strong>
-          </div>
-          <div>
-            <span>Diperbarui</span>
-            <strong>{formatTimeAgo(status.last_seen, now)}</strong>
-          </div>
-          <div>
-            <span>Alat Otomatis</span>
-            <strong>{autoCount} dari 4</strong>
-          </div>
-        </div>
-      </section>
+      <nav className="segmented sub-nav" aria-label="Navigasi Kondisi">
+        <button type="button" className={subTab === "today" ? "active" : ""} onClick={() => setSubTab("today")}>
+          <Clock size={16} aria-hidden="true" />
+          Hari Ini
+        </button>
+        <button type="button" className={subTab === "plants" ? "active" : ""} onClick={() => setSubTab("plants")}>
+          <Sprout size={16} aria-hidden="true" />
+          Tanaman
+        </button>
+        <button type="button" className={subTab === "tools" ? "active" : ""} onClick={() => setSubTab("tools")}>
+          <Power size={16} aria-hidden="true" />
+          Alat
+        </button>
+        <button type="button" className={subTab === "check" ? "active" : ""} onClick={() => setSubTab("check")}>
+          <CircleCheck size={16} aria-hidden="true" />
+          Cek {maxChecks > 0 && summary.checks[0]?.tone !== "safe" ? `(${maxChecks})` : ""}
+        </button>
+      </nav>
 
-      <section className="insight-grid">
-        <article className="insight-card">
-          <span>Pola Hari Ini</span>
-          <strong>{topPattern}</strong>
-        </article>
-        <article className="insight-card">
-          <span>Kontrol Alat</span>
-          <strong>{autoCount === 4 ? "Semua alat mengikuti sensor." : "Ada alat dalam manual sementara."}</strong>
-        </article>
-      </section>
+      {/* === TAB: HARI INI === */}
+      {subTab === "today" && (
+        <>
+          <GreenhouseHero
+            tone={summary.tone}
+            title={summary.title}
+            detail={summary.detail}
+            now={now}
+            updatedText={`Diperbarui ${formatTimeAgo(status.last_seen, now)}`}
+          />
 
-      <section>
-        <div className="section-heading">
-          <h2>Sensor Greenhouse</h2>
-          <p>Angka utama beserta makna dan tindakan yang perlu dilakukan.</p>
-        </div>
-        <div className="card-grid sensor-grid">
-          {metrics.map((metric) => (
-            <SensorCard key={metric.id} metric={metric} connection={connection} />
-          ))}
-        </div>
-      </section>
+          <section className="sensor-gauge-grid" aria-label="Kondisi utama">
+            {metrics.map((metric) => {
+              const Icon = SENSOR_ICONS[metric.id];
+              return (
+                <SensorGauge
+                  key={metric.id}
+                  value={metric.value}
+                  label={metric.shortLabel}
+                  status={connection === "offline" ? "unknown" : metric.status}
+                  percent={sensorPercent(metric.id, status, thresholds)}
+                  icon={<Icon size={18} strokeWidth={2.2} aria-hidden="true" />}
+                  onClick={() => setSubTab("plants")}
+                />
+              );
+            })}
+          </section>
 
-      <section>
-        <div className="section-heading">
-          <h2>Alat Otomatis</h2>
-          <p>Mode manual selalu sementara dan kembali otomatis setelah 30 menit.</p>
-        </div>
-        <div className="card-grid actuator-grid">
-          {ACTUATOR_ORDER.map((key) => {
+          <section className="today-footer">
+            <div className="today-meta">
+              <span>
+                {activeTools.length > 0
+                  ? `Alat aktif: ${activeTools.join(", ")}`
+                  : "Semua alat standby"}
+              </span>
+              <span>Diperbarui {formatTimeAgo(status.last_seen, now)}</span>
+            </div>
+            {maxChecks > 0 && summary.checks[0]?.tone !== "safe" && (
+              <button className="btn outline" type="button" onClick={() => setSubTab("check")}>
+                {maxChecks} hal perlu dicek
+              </button>
+            )}
+          </section>
+        </>
+      )}
+
+      {/* === TAB: TANAMAN === */}
+      {subTab === "plants" && (
+        <>
+          <section className="phase-banner">
+            <span className="crop-badge">Fase {phase.name} - HST {phase.hst}</span>
+            <p>{phase.focus}</p>
+          </section>
+
+          <section className="plant-companion-grid">
+            <article className="card target-card">
+              <h2>Target Normal Fase Ini</h2>
+              <p>Angka ini menjadi patokan cepat saat melihat kondisi greenhouse.</p>
+              <dl>
+                {Object.entries(phase.targets).map(([label, value]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </article>
+
+            <article className="card plant-focus-card">
+              <h2>Yang Perlu Diperhatikan</h2>
+              <p>{phase.risk}</p>
+              {importantMetrics.length > 0 ? (
+                <div className="plant-focus-list">
+                  {importantMetrics.map((metric) => (
+                    <div key={metric.id}>
+                      <strong>{metric.shortLabel}</strong>
+                      <p>{connection === "offline" ? "Data terakhir yang diterima." : metric.meaning}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="summary-action">Kondisi utama masih sesuai untuk fase {phase.name.toLowerCase()}.</p>
+              )}
+            </article>
+          </section>
+        </>
+      )}
+
+      {/* === TAB: ALAT (3 cards: Lampu, Pompa, Pengatur Kelembapan) === */}
+      {subTab === "tools" && (
+        <section className="tools-section">
+          <div className="section-heading">
+            <h2>Alat yang Membantu</h2>
+            <p>Kontrol manual berlaku 30 menit, lalu kembali otomatis.</p>
+          </div>
+
+          {(["growlight", "pump"] as ActuatorKey[]).map((key) => {
             const availability: ActuatorAvailability =
               connection === "offline" ? "offline_disabled" : sendingActuator === key ? "sending" : "ready";
             return (
@@ -142,20 +246,59 @@ export function DashboardPage({
               />
             );
           })}
-        </div>
-      </section>
 
-      <section className="fault-panel">
-        <div>
-          <h2>Masalah Terbaru</h2>
-          <p>
-            {status.fault.active_message
-              ? status.fault.active_message
-              : "Tidak ada masalah aktif. Perangkat dan sensor terlihat normal."}
-          </p>
-        </div>
-        <StatusPill label={status.fault.active_message ? "Perlu Dicek" : "Aman"} className={status.fault.active_message ? "tone-danger" : "tone-safe"} />
-      </section>
+          <HumidifierCard
+            mistActuator={status.actuators.mist}
+            fanActuator={status.actuators.fan}
+            now={now}
+            availability={
+              connection === "offline"
+                ? "offline_disabled"
+                : sendingActuator === "mist" || sendingActuator === "fan"
+                  ? "sending"
+                  : "ready"
+            }
+            onManualRequest={() => onManualRequest("mist")}
+            onToggle={() => onToggle("mist")}
+            onExtend={() => onExtend("mist")}
+            onAuto={() => onAuto("mist")}
+          />
+        </section>
+      )}
+
+      {/* === TAB: CEK === */}
+      {subTab === "check" && (
+        <section className="daily-check-card">
+          {summary.checks[0]?.tone === "safe" && summary.checks.length <= 2 ? (
+            <div className="check-empty">
+              <span className="check-empty-icon">
+                <Leaf size={42} strokeWidth={1.8} aria-hidden="true" />
+              </span>
+              <h2>Semua aman hari ini!</h2>
+              <p>Tidak ada yang perlu dicek mendesak. Santai saja, greenhouse Anda baik-baik saja.</p>
+            </div>
+          ) : (
+            <>
+              <div className="section-heading">
+                <h2>Yang Perlu Dicek</h2>
+                <p>Prioritas tindakan untuk stroberi putih hari ini.</p>
+              </div>
+              <div className="daily-check-list">
+                {summary.checks.slice(0, 3).map((check) => (
+                  <article className={`check-item ${sensorVisual[check.tone].className}`} key={check.id}>
+                    <div>
+                      <strong>{check.title}</strong>
+                      <p>{check.body}</p>
+                      <p className="action-text">{check.action}</p>
+                    </div>
+                    <StatusPill label={sensorVisual[check.tone].label} className={sensorVisual[check.tone].className} />
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }

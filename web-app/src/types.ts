@@ -1,10 +1,10 @@
 export type Page = "dashboard" | "thresholds" | "history" | "growth";
-export type ThemeMode = "light" | "dark";
 
 export type ConnectionState = "online" | "stale" | "offline";
 export type SensorStatusKey = "safe" | "warning" | "danger" | "unknown";
 export type ActuatorAvailability = "ready" | "offline_disabled" | "sending" | "error";
 export type FormState = "clean" | "dirty" | "invalid" | "saving" | "saved" | "error";
+export type GrowthPhaseKey = "vegetative" | "flowering" | "fruiting";
 
 export type ActuatorKey = "growlight" | "pump" | "mist" | "fan";
 export type ActuatorMode = "AUTO" | "MANUAL";
@@ -69,9 +69,19 @@ export type TelemetryPoint = {
   ts: number;
 };
 
+export type FarmJournalEntry = {
+  id: string;
+  type: "planting" | "harvest";
+  date: string;
+  quantity?: number;
+  unit?: "bibit" | "kg";
+  note?: string;
+};
+
 export type SensorMetric = {
   id: "temperature" | "humidity" | "light" | "soil";
   label: string;
+  shortLabel: string;
   value: string;
   unit: string;
   status: SensorStatusKey;
@@ -85,12 +95,38 @@ export type DashboardSummary = {
   title: string;
   detail: string;
   action: string;
+  cropContext: string;
+  badge: string;
   tone: SensorStatusKey;
+  checks: DailyCheckItem[];
 };
 
 export type ActuatorCopy = {
   label: string;
+  helpingText: string;
+  activeText: string;
   automaticText: string;
   manualModalTitle: string;
   manualModalBody: string;
+};
+
+export type CropPhaseInfo = {
+  key: GrowthPhaseKey;
+  hst: number;
+  name: string;
+  title: string;
+  shortTitle: string;
+  description: string;
+  focus: string;
+  risk: string;
+  action: string;
+  targets: Record<"Suhu ideal" | "Kelembapan ideal" | "Cahaya ideal" | "Kelembapan media ideal", string>;
+};
+
+export type DailyCheckItem = {
+  id: string;
+  title: string;
+  body: string;
+  action: string;
+  tone: SensorStatusKey;
 };

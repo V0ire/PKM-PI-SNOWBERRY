@@ -1,0 +1,35 @@
+{
+  "_comment": "Contoh dokumen awal Firestore. Impor manual via console/emulator. Ganti deviceId & uid sesuai project.",
+  "users/UID_PETANI": {
+    "role": "farmer",
+    "name": "Petani Ciwidey",
+    "devices": ["greenhouse-01"]
+  },
+  "users/UID_DEVICE": {
+    "role": "device",
+    "deviceId": "greenhouse-01"
+  },
+  "devices/greenhouse-01/config/thresholds": {
+    "temp_low": 16, "temp_high": 28,
+    "rh_low": 65, "rh_high": 85,
+    "soil_low": 50, "soil_high": 70,
+    "lux_low": 2000, "lux_high": 5000,
+    "pump_pulse_ms": 3000, "soak_period_ms": 30000,
+    "max_pump_cycles_per_hour": 6, "max_total_pump_on_ms_per_hour": 30000,
+    "light_window_start": 6, "light_window_end": 18, "max_light_hours_per_day": 14,
+    "updated_at": 0, "updated_by": "seed"
+  },
+  "devices/greenhouse-01/status/realtime": {
+    "sensors": { "temperature_c": 22.0, "humidity_pct": 78.0, "lux": 3200, "soil_pct": 62.0, "soil_raw_adc": 1900, "psu_voltage": 12.0 },
+    "actuators": {
+      "growlight": { "state": false, "mode": "AUTO", "manual_until": null, "reason": "lux_ok", "last_changed_at": 0 },
+      "pump": { "state": false, "mode": "AUTO", "manual_until": null, "reason": "soil_ok", "last_changed_at": 0 },
+      "mist": { "state": false, "mode": "AUTO", "manual_until": null, "reason": "humidity_ok", "last_changed_at": 0 },
+      "fan": { "state": false, "mode": "AUTO", "manual_until": null, "reason": "temp_rh_ok", "last_changed_at": 0 }
+    },
+    "device": { "online": true, "rssi": -60, "firmware_version": "0.1.0", "time_synced": true },
+    "command_ack": { "ack_command_id": "", "ack_status": "", "ack_at": 0, "ack_message": "" },
+    "fault": { "active_code": "NONE", "active_message": "" },
+    "last_seen": 0
+  }
+}

@@ -1,9 +1,17 @@
+import { Droplets, Lightbulb } from "lucide-react";
 import type { ActuatorAvailability, ActuatorKey, RealtimeStatus } from "../types";
 import { ACTUATOR_COPY } from "../data/mockSnowberry";
 import { formatCountdown } from "../utils/date";
 import { actuatorAvailabilityVisual } from "../utils/status";
 import { Card } from "./Card";
 import { StatusPill } from "./StatusPill";
+
+const ACTUATOR_ICON = {
+  growlight: Lightbulb,
+  pump: Droplets,
+  mist: Droplets,
+  fan: Droplets,
+};
 
 export function ActuatorCard({
   actuatorKey,
@@ -28,15 +36,34 @@ export function ActuatorCard({
   const isManual = actuator.mode === "MANUAL";
   const availabilityVisual = actuatorAvailabilityVisual[availability];
   const disabled = availabilityVisual.disabled;
+  const Icon = ACTUATOR_ICON[actuatorKey];
 
   return (
     <Card className="actuator-card">
       <div className="card-topline">
-        <h3>{copy.label}</h3>
+        <div className="icon-heading">
+          <span className="tool-icon">
+            <Icon size={20} strokeWidth={2.2} aria-hidden="true" />
+          </span>
+          <div>
+            <span className="card-kicker">Alat</span>
+            <h3>{copy.label}</h3>
+          </div>
+        </div>
         <StatusPill label={actuator.state ? "Menyala" : "Mati"} className={actuator.state ? "tone-safe" : "tone-unknown"} />
       </div>
       <p className="mode-line">Mode: {isManual ? "Manual Sementara" : "Otomatis"}</p>
-      <p className="meaning">{isManual ? "Kontrol otomatis berhenti sementara untuk alat ini." : copy.automaticText}</p>
+      <div className="sensor-guidance">
+        <span>Peran alat</span>
+        <p className="meaning">{copy.helpingText}</p>
+      </div>
+      <p className="action-text">
+        {isManual
+          ? "Kontrol otomatis berhenti sementara untuk alat ini."
+          : actuator.state
+            ? copy.activeText
+            : copy.automaticText}
+      </p>
       {isManual && <p className="countdown">Sisa waktu manual: {formatCountdown(actuator.manual_until, now)}</p>}
       {disabled && <p className="disabled-note">{availabilityVisual.message}</p>}
       <div className="button-row">

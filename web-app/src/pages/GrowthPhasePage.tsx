@@ -1,62 +1,44 @@
-import type { ThresholdConfig } from "../types";
+import { useState } from "react";
+import { CalendarDays, Sprout, Wheat } from "lucide-react";
+import type { FarmJournalEntry, ThresholdConfig } from "../types";
 import { CardSkeleton } from "../components/LoadingSkeleton";
 import { SectionHero } from "../components/SectionHero";
-import { daysAfterPlanting } from "../utils/date";
+import { getGrowthPhaseInfo } from "../utils/status";
 
-function getGrowthPhase(hst: number) {
-  if (hst <= 30) {
-    return {
-      name: "Vegetatif",
-      title: `Fase Vegetatif - Hari ke-${hst} setelah tanam`,
-      copy: "Tanaman sedang membangun akar, daun, dan crown. Media perlu lembap, tetapi tidak tergenang.",
-      targets: {
-        "Suhu ideal": "18-24 °C",
-        "Kelembapan ideal": "60-75%",
-        "Cahaya ideal": "12-16 jam per hari",
-        "Kelembapan media ideal": "60-70%",
-      },
-      action: "Buang daun rusak dan pastikan media tidak terlalu basah.",
-    };
-  }
+function todayInputValue() {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+}
 
-  if (hst <= 60) {
-    return {
-      name: "Berbunga",
-      title: `Fase Berbunga - Hari ke-${hst} setelah tanam`,
-      copy: "Jaga kelembapan agar tidak terlalu tinggi supaya penyerbukan tidak terganggu.",
-      targets: {
-        "Suhu ideal": "15-22 °C",
-        "Kelembapan ideal": "50-70%",
-        "Cahaya ideal": "20.000-40.000 lux saat siang",
-        "Kelembapan media ideal": "55-65%",
-      },
-      action: "Pantau kelembapan malam dan bantu sirkulasi udara saat bunga mulai banyak.",
-    };
-  }
-
-  return {
-    name: "Berbuah",
-    title: `Fase Berbuah - Hari ke-${hst} setelah tanam`,
-    copy: "Buah mulai membesar. Jaga media tidak terlalu basah agar buah tidak mudah pecah.",
-    targets: {
-      "Suhu ideal": "18-25 °C",
-      "Kelembapan ideal": "55-70%",
-      "Cahaya ideal": "Cukup untuk pembentukan gula",
-      "Kelembapan media ideal": "50-60%",
-    },
-    action: "Panen buah yang matang dan buang buah rusak agar tidak menular.",
-  };
+function formatJournalDate(date: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Jakarta",
+  }).format(Date.parse(`${date}T00:00:00+07:00`));
 }
 
 export function GrowthPhasePage({
   thresholds,
   isLoading,
+  journalEntries,
   onEditDate,
+  onJournalAdd,
+  onResetPlantingDate,
 }: {
   thresholds: ThresholdConfig;
   isLoading: boolean;
+  journalEntries: FarmJournalEntry[];
   onEditDate: () => void;
+  onJournalAdd: (entry: FarmJournalEntry) => void;
+  onResetPlantingDate: () => void;
 }) {
+  const [journalMode, setJournalMode] = useState<"planting" | "harvest" | null>(null);
+  const [quantity, setQuantity] = useState("");
+  const [note, setNote] = useState("");
+
   if (isLoading) {
     return (
       <div className="page-stack">
@@ -69,20 +51,58 @@ export function GrowthPhasePage({
     );
   }
 
-  const hst = daysAfterPlanting(thresholds.planting_date);
-  const phase = getGrowthPhase(hst);
-  const progress = Math.min(100, Math.round((hst / 90) * 100));
+  const phase = getGrowthPhaseInfo(thresholds.planting_date);
+  const progress = Math.min(100, Math.round((phase.hst / 90) * 100));
+  const journalCopy =
+    journalMode === "planting"
+      ? {
+          title: "Tanam Hari Ini?",
+          body: "Tanggal tanam akan direset ke hari ini. Anda boleh menambahkan jumlah bibit atau catatan singkat.",
+          label: "Jumlah bibit",
+          unit: "bibit",
+          confirm: "Simpan Tanam",
+        }
+      : {
+          title: "Catat Panen Hari Ini?",
+          body: "Catatan panen disimpan di jurnal mock. Tanggal tanam juga direset ke hari ini untuk memulai siklus baru.",
+          label: "Hasil panen",
+          unit: "kg",
+          confirm: "Simpan Panen",
+        };
+
+  const closeJournal = () => {
+    setJournalMode(null);
+    setQuantity("");
+    setNote("");
+  };
+
+  const submitJournal = () => {
+    if (!journalMode) return;
+    const numericQuantity = Number(quantity);
+    onJournalAdd({
+      id: `${journalMode}-${Date.now()}`,
+      type: journalMode,
+      date: todayInputValue(),
+      quantity: Number.isFinite(numericQuantity) && numericQuantity > 0 ? numericQuantity : undefined,
+      unit: journalMode === "planting" ? "bibit" : "kg",
+      note: note.trim() || undefined,
+    });
+    onResetPlantingDate();
+    closeJournal();
+  };
 
   return (
     <div className="page-stack">
       <SectionHero eyebrow="Tanaman" title="Fase Tanam">
-        <p>Target kondisi berubah sesuai umur tanaman.</p>
+        <p>Panduan harian berdasarkan umur tanaman stroberi putih.</p>
       </SectionHero>
 
       <section className="growth-card">
-        <p className="eyebrow">Hari ke-{hst} setelah tanam</p>
+        <span className="crop-badge">{phase.shortTitle}</span>
+        <p className="eyebrow">Hari ke-{phase.hst} setelah tanam</p>
         <h2>{phase.title}</h2>
-        <p>{phase.copy}</p>
+        <p>{phase.description}</p>
+        <p className="summary-action">{phase.focus}</p>
         <div className="progress-track" aria-label={`Perkembangan tanam ${progress}%`}>
           <span style={{ width: `${progress}%` }} />
         </div>
@@ -100,14 +120,88 @@ export function GrowthPhasePage({
             ))}
           </dl>
         </article>
-        <article className="card">
-          <h3>Saran Tindakan</h3>
+        <article className="card phase-advice-card">
+          <h3>Panduan Hari Ini</h3>
           <p>{phase.action}</p>
-          <button className="btn outline" type="button" onClick={onEditDate}>
-            Ubah Tanggal Tanam
-          </button>
+          <div className="phase-risk">
+            <span>Yang perlu dihindari</span>
+            <p>{phase.risk}</p>
+          </div>
+          <div className="button-row">
+            <button className="btn outline" type="button" onClick={onEditDate}>
+              Ubah Tanggal Tanam
+            </button>
+          </div>
         </article>
       </section>
+
+      <section className="card journal-card">
+        <div className="card-topline">
+          <div>
+            <h3>Jurnal Kebun</h3>
+            <p>Catat momen penting tanpa formulir panjang.</p>
+          </div>
+          <CalendarDays size={22} aria-hidden="true" />
+        </div>
+        <div className="journal-actions">
+          <button className="btn primary" type="button" onClick={() => setJournalMode("planting")}>
+            <Sprout size={18} aria-hidden="true" />
+            Tanam
+          </button>
+          <button className="btn outline" type="button" onClick={() => setJournalMode("harvest")}>
+            <Wheat size={18} aria-hidden="true" />
+            Panen
+          </button>
+        </div>
+        {journalEntries.length > 0 ? (
+          <div className="journal-list">
+            {journalEntries.slice(0, 3).map((entry) => (
+              <article key={entry.id}>
+                <strong>{entry.type === "planting" ? "Tanam" : "Panen"} - {formatJournalDate(entry.date)}</strong>
+                <p>
+                  {entry.quantity ? `${entry.quantity} ${entry.unit}` : "Tanpa jumlah"}
+                  {entry.note ? ` - ${entry.note}` : ""}
+                </p>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-copy">Belum ada catatan tanam atau panen.</p>
+        )}
+      </section>
+
+      {journalMode && (
+        <div className="modal-backdrop" role="presentation" onClick={closeJournal}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="journal-title" onClick={(event) => event.stopPropagation()}>
+            <span className="modal-icon">
+              {journalMode === "planting" ? <Sprout size={22} aria-hidden="true" /> : <Wheat size={22} aria-hidden="true" />}
+            </span>
+            <div>
+              <h2 id="journal-title">{journalCopy.title}</h2>
+              <p>{journalCopy.body}</p>
+            </div>
+            <label className="field">
+              <span>{journalCopy.label} (opsional)</span>
+              <div className="input-with-unit">
+                <input inputMode="decimal" type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+                <em>{journalCopy.unit}</em>
+              </div>
+            </label>
+            <label className="field">
+              <span>Catatan singkat (opsional)</span>
+              <input type="text" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Contoh: buah matang bagus" />
+            </label>
+            <div className="modal-actions">
+              <button className="btn plain" type="button" onClick={closeJournal}>
+                Batal
+              </button>
+              <button className="btn primary" type="button" onClick={submitJournal}>
+                {journalCopy.confirm}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
