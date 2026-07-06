@@ -1,0 +1,13 @@
+{
+  "name": "snowberry-device-simulator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "check": "node index.js --check"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

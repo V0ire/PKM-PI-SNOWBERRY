@@ -64,8 +64,8 @@ export async function createFirebaseDataSource(env: FirebaseEnv): Promise<Snowbe
       const ref = fsMod.doc(db, `${base}/telemetry/${todayDocId()}`);
       const snap = await fsMod.getDoc(ref);
       if (!snap.exists()) return [];
-      const data = snap.data() as { samples?: TelemetryPoint[] };
-      return data.samples ?? [];
+      const data = snap.data() as { d?: TelemetryPoint[]; samples?: TelemetryPoint[] };
+      return data.d ?? data.samples ?? [];
     },
     async saveThresholds(thresholds: ThresholdConfig) {
       await fsMod.setDoc(

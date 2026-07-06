@@ -16,6 +16,14 @@ function todayInputValue() {
   return date.toISOString().slice(0, 10);
 }
 
+function ackFallbackMessage(status: string) {
+  if (status === "APPLIED") return "Perintah alat diterapkan.";
+  if (status === "REJECTED_SAFETY") return "Perintah ditolak demi keamanan alat.";
+  if (status === "EXPIRED") return "Perintah sudah kedaluwarsa.";
+  if (status === "INVALID") return "Perintah tidak valid.";
+  return "Status perintah diperbarui.";
+}
+
 export default function App() {
   const data = useSnowberryData();
   const [page, setPage] = useState<Page>("dashboard");
@@ -24,6 +32,9 @@ export default function App() {
   const [status, setStatus] = useState(data.status);
   const [manualCandidate, setManualCandidate] = useState<ActuatorKey | null>(null);
   const [sendingActuator, setSendingActuator] = useState<ActuatorKey | null>(null);
+  const [pendingAck, setPendingAck] = useState<{ commandId: string; actuator: ActuatorKey; timeoutAt: number } | null>(
+    null,
+  );
   const [journalEntries, setJournalEntries] = useState<FarmJournalEntry[]>([]);
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
@@ -36,6 +47,26 @@ export default function App() {
   useEffect(() => {
     setStatus(data.status);
   }, [data.status]);
+
+  // Kontrak A4: ack_status APPLIED/REJECTED_SAFETY/EXPIRED/INVALID menentukan toast.
+  // Selama menunggu, tombol tetap "Mengirim..." dan status aktuator TIDAK ditebak
+  // secara optimis — angka yang tampil selalu berasal dari data.status (device asli).
+  useEffect(() => {
+    if (!pendingAck) return;
+    const ack = status.command_ack;
+    if (!ack || ack.ack_command_id !== pendingAck.commandId) return;
+    setSendingActuator(null);
+    setPendingAck(null);
+    setToast(ack.ack_message || ackFallbackMessage(ack.ack_status));
+  }, [status.command_ack, pendingAck]);
+
+  useEffect(() => {
+    if (!pendingAck) return;
+    if (now < pendingAck.timeoutAt) return;
+    setSendingActuator(null);
+    setPendingAck(null);
+    setToast("Gagal mengirim perintah. Sinyal ke perangkat belum diterima, coba lagi.");
+  }, [now, pendingAck]);
 
   useEffect(() => {
     setThresholds(data.thresholds);
@@ -72,25 +103,31 @@ export default function App() {
 
   const connection = getConnectionState(status, now);
 
-  const sendActuatorChange = (key: ActuatorKey, change: () => void, message: string) => {
-    if (connection === "offline") return;
-    setSendingActuator(key);
-    window.setTimeout(() => {
-      change();
-      setSendingActuator(null);
-      setToast(message);
-    }, 350);
-  };
-
-  const emitManualCommand = (key: ActuatorKey, state: boolean, mode: "AUTO" | "MANUAL") => {
+  // Kirim command lewat data source lalu tunggu ack (A3/A4). Dipakai untuk titik
+  // masuk/keluar Kontrol Manual Sementara, bukan untuk toggle di dalam mode manual
+  // (lihat catatan onToggle/onExtend di bawah).
+  const emitManualCommand = (
+    key: ActuatorKey,
+    state: boolean,
+    mode: "AUTO" | "MANUAL",
+    manualUntilOverride?: number,
+    track = true,
+  ) => {
     const duration = 30 * 60_000;
+    const manualUntil = manualUntilOverride ?? Date.now() + duration;
+    const remainingDuration = Math.max(1, manualUntil - Date.now());
+    const commandId = newCommandId();
+    if (track) {
+      setSendingActuator(key);
+      setPendingAck({ commandId, actuator: key, timeoutAt: Date.now() + 20_000 });
+    }
     void data.sendCommand({
-      command_id: newCommandId(),
+      command_id: commandId,
       actuator: key,
       mode,
       state,
-      manual_duration_ms: duration,
-      manual_until: Date.now() + duration,
+      manual_duration_ms: mode === "MANUAL" ? remainingDuration : duration,
+      manual_until: manualUntil,
       issued_at: Date.now(),
       issued_by: "web_user",
     });
@@ -98,36 +135,7 @@ export default function App() {
 
   const activateManual = (key: ActuatorKey) => {
     emitManualCommand(key, status.actuators[key].state, "MANUAL");
-    sendActuatorChange(
-      key,
-      () =>
-        setStatus((current) => {
-          const manualUntil = Date.now() + 30 * 60_000;
-          if (key === "mist") {
-            return {
-              ...current,
-              actuators: {
-                ...current.actuators,
-                mist: { ...current.actuators.mist, mode: "MANUAL", manual_until: manualUntil },
-                fan: { ...current.actuators.fan, mode: "MANUAL", manual_until: manualUntil },
-              },
-            };
-          }
-
-          return {
-            ...current,
-            actuators: {
-              ...current.actuators,
-              [key]: {
-                ...current.actuators[key],
-                mode: "MANUAL",
-                manual_until: manualUntil,
-              },
-            },
-          };
-        }),
-      "Kontrol manual aktif selama 30 menit.",
-    );
+    if (key === "mist") emitManualCommand("fan", status.actuators.fan.state, "MANUAL", undefined, false);
   };
 
   return (
@@ -149,89 +157,20 @@ export default function App() {
           onManualRequest={(key) => {
             if (connection !== "offline") setManualCandidate(key);
           }}
-          onToggle={(key) =>
-            sendActuatorChange(
-              key,
-              () =>
-                setStatus((current) => {
-                  if (key === "mist") {
-                    const nextState = !(current.actuators.mist.state && current.actuators.fan.state);
-                    return {
-                      ...current,
-                      actuators: {
-                        ...current.actuators,
-                        mist: { ...current.actuators.mist, state: nextState },
-                        fan: { ...current.actuators.fan, state: nextState },
-                      },
-                    };
-                  }
-
-                  return {
-                    ...current,
-                    actuators: {
-                      ...current.actuators,
-                      [key]: { ...current.actuators[key], state: !current.actuators[key].state },
-                    },
-                  };
-                }),
-              key === "mist" ? "Pengatur kelembapan diperbarui." : "Perintah alat diperbarui.",
-            )
-          }
-          onExtend={(key) =>
-            sendActuatorChange(
-              key,
-              () =>
-                setStatus((current) => {
-                  const manualUntil = Date.now() + 30 * 60_000;
-                  if (key === "mist") {
-                    return {
-                      ...current,
-                      actuators: {
-                        ...current.actuators,
-                        mist: { ...current.actuators.mist, manual_until: manualUntil },
-                        fan: { ...current.actuators.fan, manual_until: manualUntil },
-                      },
-                    };
-                  }
-
-                  return {
-                    ...current,
-                    actuators: {
-                      ...current.actuators,
-                      [key]: { ...current.actuators[key], manual_until: manualUntil },
-                    },
-                  };
-                }),
-              key === "mist" ? "Pengatur kelembapan diperpanjang 30 menit." : "Kontrol manual diperpanjang 30 menit.",
-            )
-          }
+          onToggle={(key) => {
+            const nextState = key === "mist" ? !(status.actuators.mist.state && status.actuators.fan.state) : !status.actuators[key].state;
+            const manualUntil = status.actuators[key].manual_until ?? Date.now() + 30 * 60_000;
+            emitManualCommand(key, nextState, "MANUAL", manualUntil);
+            if (key === "mist") emitManualCommand("fan", nextState, "MANUAL", manualUntil, false);
+          }}
+          onExtend={(key) => {
+            const manualUntil = Date.now() + 30 * 60_000;
+            emitManualCommand(key, status.actuators[key].state, "MANUAL", manualUntil);
+            if (key === "mist") emitManualCommand("fan", status.actuators.fan.state, "MANUAL", manualUntil, false);
+          }}
           onAuto={(key) => {
             emitManualCommand(key, false, "AUTO");
-            sendActuatorChange(
-              key,
-              () =>
-                setStatus((current) => {
-                  if (key === "mist") {
-                    return {
-                      ...current,
-                      actuators: {
-                        ...current.actuators,
-                        mist: { ...current.actuators.mist, mode: "AUTO", manual_until: null },
-                        fan: { ...current.actuators.fan, mode: "AUTO", manual_until: null },
-                      },
-                    };
-                  }
-
-                  return {
-                    ...current,
-                    actuators: {
-                      ...current.actuators,
-                      [key]: { ...current.actuators[key], mode: "AUTO", manual_until: null },
-                    },
-                  };
-                }),
-              key === "mist" ? "Pengatur kelembapan kembali otomatis." : "Alat sekarang mengikuti sensor lagi.",
-            );
+            if (key === "mist") emitManualCommand("fan", false, "AUTO", undefined, false);
           }}
         />
       )}

@@ -20,6 +20,11 @@ export type ThresholdConfig = {
   lux_high: number;
   pump_pulse_ms: number;
   soak_period_ms: number;
+  max_pump_cycles_per_hour?: number;
+  max_total_pump_on_ms_per_hour?: number;
+  light_window_start?: number;
+  light_window_end?: number;
+  max_light_hours_per_day?: number;
   planting_date: string;
   updated_at: number;
   updated_by: string;
@@ -31,6 +36,7 @@ export type RealtimeStatus = {
     humidity_pct: number | null;
     lux: number | null;
     soil_pct: number | null;
+    soil_raw_adc?: number | null;
     psu_voltage: number | null;
   };
   actuators: Record<
@@ -39,14 +45,24 @@ export type RealtimeStatus = {
       mode: ActuatorMode;
       state: boolean;
       manual_until: number | null;
+      reason?: string;
     }
   >;
   device: {
     online: boolean;
     wifi_rssi: number;
     firmware_version: string;
+    ip_address?: string;
     uptime_seconds: number;
+    free_heap_bytes?: number;
     nvs_synced: boolean;
+    time_synced?: boolean;
+  };
+  command_ack?: {
+    ack_command_id: string;
+    ack_status: "" | "APPLIED" | "REJECTED_SAFETY" | "EXPIRED" | "INVALID";
+    ack_at: number | null;
+    ack_message: string;
   };
   fault: {
     active_code: string | null;
