@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
+import type { GreenhouseProfile, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
 import { DEFAULT_THRESHOLDS, HISTORY_POINTS, INITIAL_STATUS } from "../data/mockSnowberry";
 import { createMockDataSource } from "./mockDataSource";
 import { isFirebaseConfigured, readFirebaseEnv } from "./firebaseConfig";
@@ -12,6 +12,8 @@ export type SnowberryData = {
   status: RealtimeStatus;
   thresholds: ThresholdConfig;
   telemetry: TelemetryPoint[];
+  profile: GreenhouseProfile | null;
+  saveProfile: (profile: GreenhouseProfile) => Promise<void>;
   saveThresholds: (t: ThresholdConfig) => Promise<void>;
   sendCommand: (cmd: ManualCommand) => Promise<void>;
 };
@@ -22,11 +24,13 @@ export function useSnowberryData(): SnowberryData {
   const [status, setStatus] = useState<RealtimeStatus>(INITIAL_STATUS);
   const [thresholds, setThresholds] = useState<ThresholdConfig>(DEFAULT_THRESHOLDS);
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>(HISTORY_POINTS);
+  const [profile, setProfile] = useState<GreenhouseProfile | null>(null);
   const dsRef = useRef<SnowberryDataSource | null>(null);
 
   useEffect(() => {
     let unStatus = () => {};
     let unThr = () => {};
+    let unProfile = () => {};
     let cancelled = false;
 
     async function boot() {
@@ -48,6 +52,7 @@ export function useSnowberryData(): SnowberryData {
       setSource(ds.kind);
       unStatus = ds.subscribeStatus(setStatus);
       unThr = ds.subscribeThresholds(setThresholds);
+      unProfile = ds.subscribeProfile(setProfile);
       ds.loadTelemetry().then((points) => {
         if (!cancelled && points.length) setTelemetry(points);
       });
@@ -58,6 +63,7 @@ export function useSnowberryData(): SnowberryData {
       cancelled = true;
       unStatus();
       unThr();
+      unProfile();
     };
   }, []);
 
@@ -66,6 +72,11 @@ export function useSnowberryData(): SnowberryData {
     status,
     thresholds,
     telemetry,
+    profile,
+    saveProfile: async (next) => {
+      if (dsRef.current) await dsRef.current.saveProfile(next);
+      setProfile(next);
+    },
     saveThresholds: async (t) => {
       if (dsRef.current) await dsRef.current.saveThresholds(t);
       setThresholds(t);

@@ -1,4 +1,4 @@
-import type { RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
+import type { GreenhouseProfile, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
 import type { ManualCommand, SnowberryDataSource } from "./dataSource";
 import type { FirebaseEnv } from "./firebaseConfig";
 
@@ -42,6 +42,7 @@ export async function createFirebaseDataSource(env: FirebaseEnv): Promise<Snowbe
   const db = fsMod.getFirestore(app);
 
   const base = `devices/${env.deviceId}`;
+  const deviceRef = fsMod.doc(db, base);
   const statusRef = fsMod.doc(db, `${base}/status/realtime`);
   const thresholdsRef = fsMod.doc(db, `${base}/config/thresholds`);
   const commandsRef = fsMod.doc(db, `${base}/config/commands`);
@@ -66,6 +67,16 @@ export async function createFirebaseDataSource(env: FirebaseEnv): Promise<Snowbe
       if (!snap.exists()) return [];
       const data = snap.data() as { d?: TelemetryPoint[]; samples?: TelemetryPoint[] };
       return data.d ?? data.samples ?? [];
+    },
+    subscribeProfile(cb: (profile: GreenhouseProfile | null) => void) {
+      return fsMod.onSnapshot(deviceRef, (snap: any) => {
+        const data = snap.data() as Partial<GreenhouseProfile> | undefined;
+        if (!data?.greenhouse_name || !data.plant_phase) return cb(null);
+        cb({ greenhouse_name: data.greenhouse_name, plant_phase: data.plant_phase });
+      });
+    },
+    async saveProfile(profile: GreenhouseProfile) {
+      await fsMod.setDoc(deviceRef, profile, { merge: true });
     },
     async saveThresholds(thresholds: ThresholdConfig) {
       await fsMod.setDoc(

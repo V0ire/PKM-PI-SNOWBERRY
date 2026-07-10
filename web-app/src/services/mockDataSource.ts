@@ -1,4 +1,4 @@
-import type { RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
+import type { GreenhouseProfile, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
 import { DEFAULT_THRESHOLDS, HISTORY_POINTS, INITIAL_STATUS } from "../data/mockSnowberry";
 import type { ManualCommand, SnowberryDataSource } from "./dataSource";
 
@@ -6,8 +6,10 @@ import type { ManualCommand, SnowberryDataSource } from "./dataSource";
 export function createMockDataSource(): SnowberryDataSource {
   let status: RealtimeStatus = structuredClone(INITIAL_STATUS);
   let thresholds: ThresholdConfig = structuredClone(DEFAULT_THRESHOLDS);
+  let profile: GreenhouseProfile | null = { greenhouse_name: "Greenhouse Ciwidey", plant_phase: "vegetatif" };
   const statusSubs = new Set<(s: RealtimeStatus) => void>();
   const thresholdSubs = new Set<(t: ThresholdConfig) => void>();
+  const profileSubs = new Set<(p: GreenhouseProfile | null) => void>();
 
   const emitStatus = () => statusSubs.forEach((cb) => cb(status));
 
@@ -25,6 +27,15 @@ export function createMockDataSource(): SnowberryDataSource {
     },
     async loadTelemetry(): Promise<TelemetryPoint[]> {
       return HISTORY_POINTS;
+    },
+    subscribeProfile(cb) {
+      profileSubs.add(cb);
+      cb(profile);
+      return () => profileSubs.delete(cb);
+    },
+    async saveProfile(next) {
+      profile = next;
+      profileSubs.forEach((cb) => cb(profile));
     },
     async saveThresholds(next) {
       thresholds = next;

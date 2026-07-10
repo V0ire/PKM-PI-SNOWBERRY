@@ -1,4 +1,4 @@
-export type Page = "dashboard" | "thresholds" | "history" | "growth";
+export type Page = "dashboard" | "thresholds" | "history" | "growth" | "measurement";
 
 export type ConnectionState = "online" | "stale" | "offline";
 export type SensorStatusKey = "safe" | "warning" | "danger" | "unknown";
@@ -8,6 +8,12 @@ export type GrowthPhaseKey = "vegetative" | "flowering" | "fruiting";
 
 export type ActuatorKey = "growlight" | "pump" | "mist" | "fan";
 export type ActuatorMode = "AUTO" | "MANUAL";
+export type PlantPhase = "vegetatif" | "berbunga" | "buah";
+
+export type GreenhouseProfile = {
+  greenhouse_name: string;
+  plant_phase: PlantPhase;
+};
 
 export type ThresholdConfig = {
   temp_low: number;
