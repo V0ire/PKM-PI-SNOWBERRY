@@ -47,14 +47,24 @@
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
+html {
+  min-height: 100%;
   background: var(--color-cream);
 }
 
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--color-cream);
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -83,7 +93,7 @@ p {
 }
 
 .app-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--color-cream);
 }
 
@@ -102,7 +112,7 @@ main {
   justify-content: space-between;
   gap: 12px;
   min-height: 58px;
-  padding: 8px 16px;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
   background: var(--color-card);
   box-shadow: 0 1px 0 var(--color-border);
 }
@@ -144,6 +154,39 @@ main {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.startup-screen {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  min-height: 100dvh;
+  gap: 16px;
+  padding: 24px;
+  background: var(--color-cream);
+  color: var(--color-green);
+  text-align: center;
+}
+
+.startup-screen h1 {
+  max-width: 380px;
+  font-size: 28px;
+}
+
+.startup-screen > p:not(.eyebrow) {
+  max-width: 380px;
+  color: var(--color-text-soft);
+}
+
+.startup-form {
+  display: grid;
+  width: min(100%, 380px);
+  gap: 16px;
+  padding: 20px;
+  border-radius: var(--radius-card);
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+  text-align: left;
 }
 
 .page-stack {
@@ -1147,7 +1190,9 @@ main {
   font-weight: 800;
 }
 
-.field input {
+.field input,
+.field select,
+.field textarea {
   width: 100%;
   min-height: 50px;
   padding: 12px;
@@ -1157,7 +1202,13 @@ main {
   color: var(--color-text);
 }
 
-.field input:focus {
+.field textarea {
+  resize: vertical;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
   outline: 2px solid var(--color-green-action);
   outline-offset: 2px;
 }
@@ -1259,6 +1310,65 @@ main {
 .empty-state {
   display: grid;
   gap: 8px;
+}
+
+.measurement-connection-card,
+.measurement-card {
+  display: grid;
+  gap: 16px;
+}
+
+.measurement-live-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.metric-mini-card {
+  display: grid;
+  gap: 8px;
+}
+
+.metric-mini-card span {
+  color: var(--color-text-soft);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.metric-mini-card strong {
+  color: var(--color-green-dark);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.measurement-form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.measurement-record-list {
+  display: grid;
+  gap: 10px;
+}
+
+.measurement-record {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-card-soft);
+}
+
+.measurement-record strong {
+  color: var(--color-text);
+}
+
+.measurement-record span {
+  color: var(--color-green-dark);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .chart-card svg {
@@ -1440,7 +1550,7 @@ main {
   left: 16px;
   z-index: 9;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
   max-width: 680px;
   min-height: var(--bottom-nav-height);
@@ -1600,6 +1710,14 @@ main {
   .two-column,
   .field-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .measurement-live-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .measurement-form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .tools-section {

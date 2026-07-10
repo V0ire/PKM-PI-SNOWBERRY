@@ -9,6 +9,7 @@ type DataSourceKind = "mock" | "firebase";
 
 export type SnowberryData = {
   source: DataSourceKind;
+  statusReady: boolean;
   status: RealtimeStatus;
   thresholds: ThresholdConfig;
   telemetry: TelemetryPoint[];
@@ -21,6 +22,7 @@ export type SnowberryData = {
 // Hook tunggal: pilih Firebase jika env terisi, selain itu mock.
 export function useSnowberryData(): SnowberryData {
   const [source, setSource] = useState<DataSourceKind>("mock");
+  const [statusReady, setStatusReady] = useState(false);
   const [status, setStatus] = useState<RealtimeStatus>(INITIAL_STATUS);
   const [thresholds, setThresholds] = useState<ThresholdConfig>(DEFAULT_THRESHOLDS);
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>(HISTORY_POINTS);
@@ -50,7 +52,10 @@ export function useSnowberryData(): SnowberryData {
       if (cancelled) return;
       dsRef.current = ds;
       setSource(ds.kind);
-      unStatus = ds.subscribeStatus(setStatus);
+      unStatus = ds.subscribeStatus((next) => {
+        setStatus(next);
+        setStatusReady(true);
+      });
       unThr = ds.subscribeThresholds(setThresholds);
       unProfile = ds.subscribeProfile(setProfile);
       ds.loadTelemetry().then((points) => {
@@ -69,6 +74,7 @@ export function useSnowberryData(): SnowberryData {
 
   return {
     source,
+    statusReady,
     status,
     thresholds,
     telemetry,

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { ConfirmManualModal } from "./components/ConfirmManualModal";
+import { StartupScreen } from "./components/StartupScreen";
 import { useSnowberryData } from "./services/useSnowberryData";
 import { newCommandId } from "./services/dataSource";
 import { DashboardPage } from "./pages/DashboardPage";
 import { GrowthPhasePage } from "./pages/GrowthPhasePage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { MeasurementPage } from "./pages/MeasurementPage";
 import { ThresholdsPage } from "./pages/ThresholdsPage";
 import type { ActuatorKey, FarmJournalEntry, Page } from "./types";
 import { getConnectionState } from "./utils/status";
@@ -38,11 +40,28 @@ export default function App() {
   const [journalEntries, setJournalEntries] = useState<FarmJournalEntry[]>([]);
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
+  const [startupElapsed, setStartupElapsed] = useState(false);
+  const [startupTimedOut, setStartupTimedOut] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setStartupElapsed(true), 3000);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (data.statusReady) return;
+    const timer = window.setTimeout(() => {
+      setStartupElapsed(true);
+      setStartupTimedOut(true);
+      setToast("Data greenhouse belum masuk. Cek listrik box Snowberry dan koneksi Wi-Fi. Hubungi tim teknis jika masalah berlanjut.");
+    }, 15_000);
+    return () => window.clearTimeout(timer);
+  }, [data.statusReady]);
 
   useEffect(() => {
     setStatus(data.status);
@@ -102,6 +121,13 @@ export default function App() {
   }, [now]);
 
   const connection = getConnectionState(status, now);
+  const canOpenApp = startupElapsed && (data.statusReady || startupTimedOut);
+
+  if (!canOpenApp) return <StartupScreen showSetup={false} onSave={() => {}} />;
+
+  if (data.statusReady && !data.profile) {
+    return <StartupScreen showSetup onSave={(profile) => void data.saveProfile(profile)} />;
+  }
 
   // Kirim command lewat data source lalu tunggu ack (A3/A4). Dipakai untuk titik
   // masuk/keluar Kontrol Manual Sementara, bukan untuk toggle di dalam mode manual
@@ -135,7 +161,6 @@ export default function App() {
 
   const activateManual = (key: ActuatorKey) => {
     emitManualCommand(key, status.actuators[key].state, "MANUAL");
-    if (key === "mist") emitManualCommand("fan", status.actuators.fan.state, "MANUAL", undefined, false);
   };
 
   return (
@@ -158,19 +183,16 @@ export default function App() {
             if (connection !== "offline") setManualCandidate(key);
           }}
           onToggle={(key) => {
-            const nextState = key === "mist" ? !(status.actuators.mist.state && status.actuators.fan.state) : !status.actuators[key].state;
+            const nextState = !status.actuators[key].state;
             const manualUntil = status.actuators[key].manual_until ?? Date.now() + 30 * 60_000;
             emitManualCommand(key, nextState, "MANUAL", manualUntil);
-            if (key === "mist") emitManualCommand("fan", nextState, "MANUAL", manualUntil, false);
           }}
           onExtend={(key) => {
             const manualUntil = Date.now() + 30 * 60_000;
             emitManualCommand(key, status.actuators[key].state, "MANUAL", manualUntil);
-            if (key === "mist") emitManualCommand("fan", status.actuators.fan.state, "MANUAL", manualUntil, false);
           }}
           onAuto={(key) => {
             emitManualCommand(key, false, "AUTO");
-            if (key === "mist") emitManualCommand("fan", false, "AUTO", undefined, false);
           }}
         />
       )}
@@ -209,6 +231,8 @@ export default function App() {
           }}
         />
       )}
+
+      {page === "measurement" && <MeasurementPage />}
 
       {manualCandidate && (
         <ConfirmManualModal
