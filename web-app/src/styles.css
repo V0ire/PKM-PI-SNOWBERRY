@@ -1,8 +1,8 @@
 :root {
   --color-cream: #f2f0eb;
   --color-ceramic: #edebe9;
-  --color-card: #ffffff;
-  --color-card-soft: #faf8f4;
+  --color-card: #fffefd;
+  --color-card-soft: #f8f6f2;
   --color-green: #006241;
   --color-green-action: #00754a;
   --color-green-dark: #1e3932;
@@ -19,9 +19,9 @@
   --color-border: rgba(0, 0, 0, 0.12);
   --color-input: #ffffff;
   --color-nav: #ffffff;
-  --radius-card: 12px;
+  --radius-card: 20px;
   --radius-pill: 50px;
-  --shadow-card: 0 0 0.5px rgba(0, 0, 0, 0.14), 0 1px 1px rgba(0, 0, 0, 0.24);
+  --shadow-card: 0 0 0 1px rgba(30, 57, 50, 0.05), 0 2px 6px rgba(30, 57, 50, 0.05), 0 6px 14px rgba(30, 57, 50, 0.08);
   --shadow-nav: 0 1px 3px rgba(0, 0, 0, 0.1), 0 2px 2px rgba(0, 0, 0, 0.06), 0 0 2px rgba(0, 0, 0, 0.07);
   --shadow-float: 0 0 6px rgba(0, 0, 0, 0.24), 0 8px 12px rgba(0, 0, 0, 0.14);
   --status-safe-bg: #d4e9e2;
@@ -38,7 +38,7 @@
   --status-unknown-border: rgba(0, 0, 0, 0.16);
   --bottom-nav-height: 64px;
   color: var(--color-text);
-  font-family: Inter, Manrope, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: "Nunito Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-synthesis: none;
   letter-spacing: 0;
 }
@@ -920,7 +920,7 @@ main {
 
 .card h3 {
   color: var(--color-text);
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .status-pill {
@@ -1005,7 +1005,7 @@ main {
 
 .sensor-value {
   color: var(--color-text);
-  font-size: 34px;
+  font-size: 22px;
   font-weight: 850;
   line-height: 1;
 }
@@ -1559,7 +1559,7 @@ main {
   left: 16px;
   z-index: 9;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   max-width: 680px;
   min-height: var(--bottom-nav-height);
@@ -1568,13 +1568,24 @@ main {
   border-radius: var(--radius-pill);
   background: var(--color-nav);
   border: 1px solid var(--color-border);
-  box-shadow: 0 0 0.5px rgba(0, 0, 0, 0.14), 0 4px 10px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 5px 16px rgba(30, 57, 50, 0.16);
 }
 
 .bottom-nav button {
   flex-direction: column;
   gap: 2px;
-  font-size: 12px;
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 .toast {
