@@ -139,6 +139,7 @@ Shape kanon (ditulis web; sudah sesuai `web-app/src/services/dataSource.ts`):
   "actuator": "pump",
   "mode": "MANUAL",
   "state": true,
+  "command_type": "REWATER",
   "manual_duration_ms": 1800000,
   "manual_until": 1751458800000,
   "issued_at": 1751457000000,
@@ -152,6 +153,7 @@ Shape kanon (ditulis web; sudah sesuai `web-app/src/services/dataSource.ts`):
 | `actuator` | string | `"growlight"` \| `"pump"` \| `"mist"` \| `"fan"` | lowercase persis. |
 | `mode` | string | `"AUTO"` \| `"MANUAL"` | `"AUTO"` = batalkan manual, kembali otomatis (field `state` diabaikan). |
 | `state` | boolean | — | Target ON/OFF saat `mode="MANUAL"`. |
+| `command_type` | string\|null | `"REWATER"` | Opsional. Hanya valid untuk `actuator="pump"`, `mode="MANUAL"`, dan `state=true`. Device menerima hanya saat `PUMP_NO_EFFECT` aktif, lalu menjalankan satu pulsa aman firmware; selain itu `REJECTED_SAFETY`. |
 | `manual_duration_ms` | number | 1 – 1.800.000 | WAJIB ≤ 30 menit. Di luar range → device clamp ke 1.800.000; `0`/negatif → `INVALID`. |
 | `manual_until` | number | — | epoch ms; dipakai HANYA jika `time_synced=true`. |
 | `issued_at` | number | — | epoch ms dari web. |
@@ -166,7 +168,7 @@ Saat command baru terdeteksi, device WAJIB mencatat `received_at_ms = millis()` 
 
 | `ack_status` | Kapan dipakai | `ack_message` contoh |
 | --- | --- | --- |
-| `APPLIED` | Command valid, lolos safety, state diterapkan (termasuk `mode:"AUTO"` yang membatalkan manual) | `"Pompa manual ON diterapkan"` |
+| `APPLIED` | Command valid, lolos safety, state diterapkan (termasuk `mode:"AUTO"` yang membatalkan manual) | `"Pompa manual ON diterapkan"` atau `"Penyiraman ulang dimulai"` |
 | `REJECTED_SAFETY` | Safety layer menang: mis. pump ON saat `soil_valid=false`, kalibrasi hilang, `PSU_VOLTAGE_LOW`, `CONFIG_INVALID` | `"Perintah ditolak: sensor media tidak valid"` |
 | `EXPIRED` | Saat pertama dibaca, command sudah lewat masa berlaku (epoch: `now >= manual_until`; fallback: `issued_at` menunjukkan usia > `manual_duration_ms` — hanya bisa dinilai jika `time_synced=true`; jika tidak synced, command yang baru terdeteksi TIDAK pernah langsung EXPIRED) | `"Perintah sudah kedaluwarsa"` |
 | `INVALID` | Gagal parse: field wajib hilang, `actuator` di luar enum, `mode` di luar enum, `manual_duration_ms ≤ 0`, `command_id` kosong | `"Perintah tidak valid"` |

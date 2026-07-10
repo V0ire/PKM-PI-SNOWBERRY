@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { ConfirmManualModal } from "./components/ConfirmManualModal";
+import { ConfirmRewaterModal } from "./components/ConfirmRewaterModal";
 import { StartupScreen } from "./components/StartupScreen";
 import { useSnowberryData } from "./services/useSnowberryData";
 import { newCommandId } from "./services/dataSource";
@@ -24,6 +25,7 @@ export default function App() {
   const [thresholds, setThresholds] = useState(data.thresholds);
   const [status, setStatus] = useState(data.status);
   const [manualCandidate, setManualCandidate] = useState<ActuatorKey | null>(null);
+  const [rewaterCandidate, setRewaterCandidate] = useState(false);
   const [sendingActuator, setSendingActuator] = useState<ActuatorKey | null>(null);
   const [pendingAck, setPendingAck] = useState<{ commandId: string; actuator: ActuatorKey; timeoutAt: number } | null>(
     null,
@@ -153,6 +155,23 @@ export default function App() {
     emitManualCommand(key, status.actuators[key].state, "MANUAL");
   };
 
+  const requestRewater = () => {
+    const commandId = newCommandId();
+    setSendingActuator("pump");
+    setPendingAck({ commandId, actuator: "pump", timeoutAt: Date.now() + 20_000 });
+    void data.sendCommand({
+      command_id: commandId,
+      actuator: "pump",
+      mode: "MANUAL",
+      state: true,
+      command_type: "REWATER",
+      manual_duration_ms: 1,
+      manual_until: null,
+      issued_at: Date.now(),
+      issued_by: "web_user",
+    });
+  };
+
   return (
     <AppShell
       page={page}
@@ -184,6 +203,7 @@ export default function App() {
           onAuto={(key) => {
             emitManualCommand(key, false, "AUTO");
           }}
+          onRewaterRequest={() => setRewaterCandidate(true)}
           initialTab="today"
         />
       )}
@@ -203,11 +223,22 @@ export default function App() {
           onToggle={(key) => emitManualCommand(key, !status.actuators[key].state, "MANUAL", status.actuators[key].manual_until ?? Date.now() + 30 * 60_000)}
           onExtend={(key) => emitManualCommand(key, status.actuators[key].state, "MANUAL", Date.now() + 30 * 60_000)}
           onAuto={(key) => emitManualCommand(key, false, "AUTO")}
+          onRewaterRequest={() => setRewaterCandidate(true)}
           initialTab={page}
         />
       )}
 
       {page === "history" && <HistoryPage history={data.telemetry} isLoading={isLoading} />}
+
+      {rewaterCandidate && (
+        <ConfirmRewaterModal
+          onCancel={() => setRewaterCandidate(false)}
+          onConfirm={() => {
+            requestRewater();
+            setRewaterCandidate(false);
+          }}
+        />
+      )}
 
       {manualCandidate && (
         <ConfirmManualModal

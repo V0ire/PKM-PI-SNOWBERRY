@@ -57,6 +57,7 @@ export function DashboardPage({
   onToggle,
   onExtend,
   onAuto,
+  onRewaterRequest,
   initialTab = "today",
 }: {
   status: RealtimeStatus;
@@ -70,6 +71,7 @@ export function DashboardPage({
   onToggle: (key: ActuatorKey) => void;
   onExtend: (key: ActuatorKey) => void;
   onAuto: (key: ActuatorKey) => void;
+  onRewaterRequest: () => void;
   initialTab?: DashboardTab;
 }) {
   const [subTab, setSubTab] = useState<SubTab>(initialTab);
@@ -146,9 +148,15 @@ export function DashboardPage({
              detail={summary.detail}
              action={summary.action}
              now={now}
-            updatedText={`Diperbarui ${formatTimeAgo(status.last_seen, now)}`}
-          />
+             updatedText={`Diperbarui ${formatTimeAgo(status.last_seen, now)}`}
+           />
 
+           {status.fault.active_code === "PUMP_NO_EFFECT" && connection === "online" && (
+             <button className="btn primary" type="button" onClick={onRewaterRequest} disabled={sendingActuator === "pump"}>
+               {sendingActuator === "pump" ? "Mengirim..." : "Siram Kembali"}
+             </button>
+           )}
+ 
            {importantMetrics.length > 0 && (
              <section className="issue-list" aria-label="Kondisi yang perlu diperhatikan">
                {importantMetrics.map((metric) => (

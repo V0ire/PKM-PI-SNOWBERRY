@@ -6,8 +6,9 @@ export type ManualCommand = {
   actuator: ActuatorKey;
   mode: "AUTO" | "MANUAL";
   state: boolean;
+  command_type?: "REWATER";
   manual_duration_ms: number;
-  manual_until: number;
+  manual_until: number | null;
   issued_at: number;
   issued_by: string;
 };
