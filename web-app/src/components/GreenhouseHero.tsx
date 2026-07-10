@@ -21,12 +21,14 @@ export function GreenhouseHero({
   tone,
   title,
   detail,
+  action,
   now,
   updatedText,
 }: {
   tone: SensorStatusKey;
   title: string;
   detail: string;
+  action: string;
   now: number;
   updatedText?: string;
 }) {
@@ -47,8 +49,10 @@ export function GreenhouseHero({
       </div>
       <div className="hero-copy">
         <p className="hero-greeting">{greeting}</p>
+        <p className="eyebrow">Aksi Utama</p>
         <h1>{title}</h1>
         <p>{detail}</p>
+        <p className="hero-action">{action}</p>
         {updatedText && <span className="hero-updated">{updatedText}</span>}
       </div>
     </section>

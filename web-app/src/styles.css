@@ -481,7 +481,16 @@ main {
 .hero-copy {
   display: grid;
   gap: 8px;
-  min-width: 0;
+}
+
+.hero-action {
+  color: var(--color-green-dark) !important;
+  font-weight: 800;
+}
+
+.issue-list {
+  display: grid;
+  gap: 12px;
 }
 
 .hero-greeting {

@@ -70,15 +70,15 @@ export const connectionVisual: Record<
     label: "Data Lama",
     shortLabel: "Data Lama",
     className: "tone-warning",
-    message: "Data mungkin tidak terbaru. Kontrol otomatis di perangkat tetap berjalan.",
-    action: "Cek koneksi jika data tidak berubah beberapa menit lagi.",
+    message: "Data mungkin tidak terbaru. Cek listrik box Snowberry dan koneksi Wi-Fi.",
+    action: "Hubungi tim teknis jika data tidak berubah beberapa menit lagi.",
   },
   offline: {
     label: "Offline",
     shortLabel: "Offline",
     className: "tone-danger",
-    message: "Perangkat tidak terhubung. Cek daya, WiFi, atau posisi perangkat.",
-    action: "Kontrol manual belum bisa dikirim.",
+    message: "Data greenhouse belum masuk. Cek listrik box Snowberry dan koneksi Wi-Fi.",
+    action: "Hubungi tim teknis jika masalah berlanjut.",
   },
 };
 
@@ -400,7 +400,7 @@ export function getDailyCheckItems(
       id: "offline",
       title: "Sambungkan perangkat dulu",
       body: `Data terakhir diterima ${formatTimeAgo(status.last_seen, now)}. Angka di aplikasi belum bisa dipakai sebagai kondisi terbaru.`,
-      action: "Cek daya, WiFi, atau posisi perangkat di greenhouse.",
+       action: "Cek listrik box Snowberry dan koneksi Wi-Fi. Hubungi tim teknis jika masalah berlanjut.",
       tone: "danger",
     });
   } else if (connection === "stale") {
@@ -462,10 +462,10 @@ export function getDashboardSummary(
 
   if (connection === "offline") {
     return {
-      title: "Perangkat offline. Data tidak terbaru.",
-      detail: `Data terakhir diterima ${formatTimeAgo(status.last_seen, now)}. Jangan mengambil keputusan dari angka lama sebelum perangkat tersambung lagi.`,
-      action: "Cek daya, WiFi, atau posisi perangkat.",
-      cropContext: "Kontrol otomatis lokal tetap berjalan dengan batas terakhir di perangkat.",
+       title: "Data greenhouse belum masuk.",
+       detail: `Data terakhir diterima ${formatTimeAgo(status.last_seen, now)}. Angka di aplikasi belum bisa dipakai sebagai kondisi terbaru.`,
+       action: "Cek listrik box Snowberry dan koneksi Wi-Fi. Hubungi tim teknis jika masalah berlanjut.",
+       cropContext: "Periksa box Snowberry sebelum mengambil keputusan dari data lama.",
       badge,
       tone: "danger",
       checks,

@@ -143,12 +143,24 @@ export function DashboardPage({
           <GreenhouseHero
             tone={summary.tone}
             title={summary.title}
-            detail={summary.detail}
-            now={now}
+             detail={summary.detail}
+             action={summary.action}
+             now={now}
             updatedText={`Diperbarui ${formatTimeAgo(status.last_seen, now)}`}
           />
 
-          <section className="sensor-gauge-grid" aria-label="Kondisi utama">
+           {importantMetrics.length > 0 && (
+             <section className="issue-list" aria-label="Kondisi yang perlu diperhatikan">
+               {importantMetrics.map((metric) => (
+                 <NoticeBanner key={metric.id} tone={metric.status === "danger" ? "danger" : "warning"} title={metric.label}>
+                   <p>{metric.meaning}</p>
+                   <p><strong>{metric.action}</strong></p>
+                 </NoticeBanner>
+               ))}
+             </section>
+           )}
+
+           <section className="sensor-gauge-grid" aria-label="Kondisi utama">
             {metrics.map((metric) => {
               const Icon = SENSOR_ICONS[metric.id];
               return (
