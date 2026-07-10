@@ -5,18 +5,9 @@ import { StartupScreen } from "./components/StartupScreen";
 import { useSnowberryData } from "./services/useSnowberryData";
 import { newCommandId } from "./services/dataSource";
 import { DashboardPage } from "./pages/DashboardPage";
-import { GrowthPhasePage } from "./pages/GrowthPhasePage";
 import { HistoryPage } from "./pages/HistoryPage";
-import { MeasurementPage } from "./pages/MeasurementPage";
-import { ThresholdsPage } from "./pages/ThresholdsPage";
-import type { ActuatorKey, FarmJournalEntry, Page } from "./types";
+import type { ActuatorKey, Page } from "./types";
 import { getConnectionState } from "./utils/status";
-
-function todayInputValue() {
-  const date = new Date();
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 10);
-}
 
 function ackFallbackMessage(status: string) {
   if (status === "APPLIED") return "Perintah alat diterapkan.";
@@ -37,7 +28,6 @@ export default function App() {
   const [pendingAck, setPendingAck] = useState<{ commandId: string; actuator: ActuatorKey; timeoutAt: number } | null>(
     null,
   );
-  const [journalEntries, setJournalEntries] = useState<FarmJournalEntry[]>([]);
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
   const [startupElapsed, setStartupElapsed] = useState(false);
@@ -194,45 +184,30 @@ export default function App() {
           onAuto={(key) => {
             emitManualCommand(key, false, "AUTO");
           }}
+          initialTab="today"
         />
       )}
 
-      {page === "thresholds" && (
-        <ThresholdsPage
+      {(page === "plants" || page === "tools") && (
+        <DashboardPage
+          status={status}
           thresholds={thresholds}
+          history={data.telemetry}
+          now={now}
           connection={connection}
           isLoading={isLoading}
-          onSave={(next) => {
-            setThresholds(next);
-            void data.saveThresholds(next);
+          sendingActuator={sendingActuator}
+          onManualRequest={(key) => {
+            if (connection !== "offline") setManualCandidate(key);
           }}
-          onToast={setToast}
+          onToggle={(key) => emitManualCommand(key, !status.actuators[key].state, "MANUAL", status.actuators[key].manual_until ?? Date.now() + 30 * 60_000)}
+          onExtend={(key) => emitManualCommand(key, status.actuators[key].state, "MANUAL", Date.now() + 30 * 60_000)}
+          onAuto={(key) => emitManualCommand(key, false, "AUTO")}
+          initialTab={page}
         />
       )}
 
       {page === "history" && <HistoryPage history={data.telemetry} isLoading={isLoading} />}
-
-      {page === "growth" && (
-        <GrowthPhasePage
-          thresholds={thresholds}
-          isLoading={isLoading}
-          journalEntries={journalEntries}
-          onEditDate={() => setPage("thresholds")}
-          onJournalAdd={(entry) => setJournalEntries((current) => [entry, ...current])}
-          onResetPlantingDate={() => {
-            const today = todayInputValue();
-            setThresholds((current) => ({
-              ...current,
-              planting_date: today,
-              updated_at: Date.now(),
-              updated_by: "uid_mock_petani",
-            }));
-            setToast("Tanggal tanam direset ke hari ini.");
-          }}
-        />
-      )}
-
-      {page === "measurement" && <MeasurementPage />}
 
       {manualCandidate && (
         <ConfirmManualModal

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CircleCheck, Clock, Droplets, Leaf, Power, Sprout, Sun, Thermometer } from "lucide-react";
 import type { ActuatorAvailability, ActuatorKey, ConnectionState, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
 import { formatTimeAgo } from "../utils/date";
@@ -6,12 +6,12 @@ import { connectionVisual, getDashboardSummary, getGrowthPhaseInfo, getSensorMet
 import { ActuatorCard } from "../components/ActuatorCard";
 import { CardSkeleton, SummarySkeleton } from "../components/LoadingSkeleton";
 import { GreenhouseHero } from "../components/GreenhouseHero";
-import { HumidifierCard } from "../components/HumidifierCard";
 import { NoticeBanner } from "../components/NoticeBanner";
 import { SensorGauge } from "../components/SensorGauge";
 import { StatusPill } from "../components/StatusPill";
 
 type SubTab = "today" | "plants" | "tools" | "check";
+export type DashboardTab = SubTab;
 
 const SENSOR_ICONS = {
   temperature: Thermometer,
@@ -57,6 +57,7 @@ export function DashboardPage({
   onToggle,
   onExtend,
   onAuto,
+  initialTab = "today",
 }: {
   status: RealtimeStatus;
   thresholds: ThresholdConfig;
@@ -69,8 +70,11 @@ export function DashboardPage({
   onToggle: (key: ActuatorKey) => void;
   onExtend: (key: ActuatorKey) => void;
   onAuto: (key: ActuatorKey) => void;
+  initialTab?: DashboardTab;
 }) {
-  const [subTab, setSubTab] = useState<SubTab>("today");
+  const [subTab, setSubTab] = useState<SubTab>(initialTab);
+
+  useEffect(() => setSubTab(initialTab), [initialTab]);
 
   if (isLoading) {
     return (
@@ -221,7 +225,7 @@ export function DashboardPage({
         </>
       )}
 
-      {/* === TAB: ALAT (3 cards: Lampu, Pompa, Pengatur Kelembapan) === */}
+      {/* === TAB: ALAT === */}
       {subTab === "tools" && (
         <section className="tools-section">
           <div className="section-heading">
@@ -229,7 +233,7 @@ export function DashboardPage({
             <p>Kontrol manual berlaku 30 menit, lalu kembali otomatis.</p>
           </div>
 
-          {(["growlight", "pump"] as ActuatorKey[]).map((key) => {
+          {(["growlight", "pump", "mist", "fan"] as ActuatorKey[]).map((key) => {
             const availability: ActuatorAvailability =
               connection === "offline" ? "offline_disabled" : sendingActuator === key ? "sending" : "ready";
             return (
@@ -246,23 +250,6 @@ export function DashboardPage({
               />
             );
           })}
-
-          <HumidifierCard
-            mistActuator={status.actuators.mist}
-            fanActuator={status.actuators.fan}
-            now={now}
-            availability={
-              connection === "offline"
-                ? "offline_disabled"
-                : sendingActuator === "mist" || sendingActuator === "fan"
-                  ? "sending"
-                  : "ready"
-            }
-            onManualRequest={() => onManualRequest("mist")}
-            onToggle={() => onToggle("mist")}
-            onExtend={() => onExtend("mist")}
-            onAuto={() => onAuto("mist")}
-          />
         </section>
       )}
 

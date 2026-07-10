@@ -1,11 +1,11 @@
-import { ChartLine, House, SlidersHorizontal, Sprout } from "lucide-react";
+import { ChartLine, House, Power, Sprout } from "lucide-react";
 import type { Page } from "../types";
 
 const items: Array<{ page: Page; label: string; Icon: typeof House }> = [
-  { page: "dashboard", label: "Kondisi", Icon: House },
-  { page: "thresholds", label: "Batas", Icon: SlidersHorizontal },
+  { page: "dashboard", label: "Beranda", Icon: House },
+  { page: "plants", label: "Tanaman", Icon: Sprout },
+  { page: "tools", label: "Alat", Icon: Power },
   { page: "history", label: "Riwayat", Icon: ChartLine },
-  { page: "growth", label: "Fase", Icon: Sprout },
 ];
 
 export function BottomNav({ page, onChange }: { page: Page; onChange: (page: Page) => void }) {

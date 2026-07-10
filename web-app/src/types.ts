@@ -1,4 +1,4 @@
-export type Page = "dashboard" | "thresholds" | "history" | "growth" | "measurement";
+export type Page = "dashboard" | "plants" | "tools" | "history";
 
 export type ConnectionState = "online" | "stale" | "offline";
 export type SensorStatusKey = "safe" | "warning" | "danger" | "unknown";
