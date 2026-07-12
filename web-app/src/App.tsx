@@ -7,6 +7,7 @@ import { useSnowberryData } from "./services/useSnowberryData";
 import { newCommandId } from "./services/dataSource";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { CheckPage } from "./pages/CheckPage";
 import type { ActuatorKey, Page } from "./types";
 import { getConnectionState } from "./utils/status";
 
@@ -34,6 +35,7 @@ export default function App() {
   const [now, setNow] = useState(Date.now());
   const [startupElapsed, setStartupElapsed] = useState(false);
   const [startupTimedOut, setStartupTimedOut] = useState(false);
+  const [checks, setChecks] = useState<import("./types").DailyCheckItem[]>([]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -63,9 +65,9 @@ export default function App() {
   // Selama menunggu, tombol tetap "Mengirim..." dan status aktuator TIDAK ditebak
   // secara optimis — angka yang tampil selalu berasal dari data.status (device asli).
   useEffect(() => {
-    if (!pendingAck) return;
+    if (!pendingAck || !status.command_ack) return;
     const ack = status.command_ack;
-    if (!ack || ack.ack_command_id !== pendingAck.commandId) return;
+    if (ack.ack_command_id !== pendingAck.commandId) return;
     setSendingActuator(null);
     setPendingAck(null);
     setToast(ack.ack_message || ackFallbackMessage(ack.ack_status));
@@ -114,6 +116,9 @@ export default function App() {
 
   const connection = getConnectionState(status, now);
   const canOpenApp = startupElapsed && (data.statusReady || startupTimedOut);
+
+  const actuators = status.actuators || {};
+  const rewaterState = actuators.pump ? actuators.pump.state : false;
 
   if (!canOpenApp) return <StartupScreen showSetup={false} onSave={() => {}} />;
 
@@ -192,18 +197,26 @@ export default function App() {
             if (connection !== "offline") setManualCandidate(key);
           }}
           onToggle={(key) => {
-            const nextState = !status.actuators[key].state;
-            const manualUntil = status.actuators[key].manual_until ?? Date.now() + 30 * 60_000;
+            const act = actuators[key];
+            if (!act) return;
+            const nextState = !act.state;
+            const manualUntil = act.manual_until ?? Date.now() + 30 * 60_000;
             emitManualCommand(key, nextState, "MANUAL", manualUntil);
           }}
           onExtend={(key) => {
+            const act = actuators[key];
+            if (!act) return;
             const manualUntil = Date.now() + 30 * 60_000;
-            emitManualCommand(key, status.actuators[key].state, "MANUAL", manualUntil);
+            emitManualCommand(key, act.state, "MANUAL", manualUntil);
           }}
           onAuto={(key) => {
             emitManualCommand(key, false, "AUTO");
           }}
-          onRewaterRequest={() => setRewaterCandidate(true)}
+           onRewaterRequest={() => setRewaterCandidate(true)}
+           onOpenChecks={(next) => {
+             setChecks(next);
+             setPage("check");
+           }}
           initialTab="today"
         />
       )}
@@ -220,15 +233,28 @@ export default function App() {
           onManualRequest={(key) => {
             if (connection !== "offline") setManualCandidate(key);
           }}
-          onToggle={(key) => emitManualCommand(key, !status.actuators[key].state, "MANUAL", status.actuators[key].manual_until ?? Date.now() + 30 * 60_000)}
-          onExtend={(key) => emitManualCommand(key, status.actuators[key].state, "MANUAL", Date.now() + 30 * 60_000)}
+          onToggle={(key) => {
+            const act = actuators[key];
+            if (!act) return;
+            emitManualCommand(key, !act.state, "MANUAL", act.manual_until ?? Date.now() + 30 * 60_000);
+          }}
+          onExtend={(key) => {
+            const act = actuators[key];
+            if (!act) return;
+            emitManualCommand(key, act.state, "MANUAL", Date.now() + 30 * 60_000);
+          }}
           onAuto={(key) => emitManualCommand(key, false, "AUTO")}
           onRewaterRequest={() => setRewaterCandidate(true)}
+          onOpenChecks={(next) => {
+            setChecks(next);
+            setPage("check");
+          }}
           initialTab={page}
         />
       )}
 
       {page === "history" && <HistoryPage history={data.telemetry} isLoading={isLoading} />}
+      {page === "check" && <CheckPage checks={checks} onBack={() => setPage("dashboard")} />}
 
       {rewaterCandidate && (
         <ConfirmRewaterModal

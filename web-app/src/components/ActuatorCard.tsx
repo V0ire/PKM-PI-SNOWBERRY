@@ -1,4 +1,4 @@
-import { Droplets, Lightbulb } from "lucide-react";
+import { Droplets, Fan, Lightbulb, Sprout } from "lucide-react";
 import type { ActuatorAvailability, ActuatorKey, RealtimeStatus } from "../types";
 import { ACTUATOR_COPY } from "../data/mockSnowberry";
 import { formatCountdown } from "../utils/date";
@@ -8,9 +8,9 @@ import { StatusPill } from "./StatusPill";
 
 const ACTUATOR_ICON = {
   growlight: Lightbulb,
-  pump: Droplets,
+  pump: Sprout,
   mist: Droplets,
-  fan: Droplets,
+  fan: Fan,
 };
 
 export function ActuatorCard({
@@ -65,11 +65,12 @@ export function ActuatorCard({
             : copy.automaticText}
       </p>
       {isManual && <p className="countdown">Sisa waktu manual: {formatCountdown(actuator.manual_until, now)}</p>}
-      {disabled && <p className="disabled-note">{availabilityVisual.message}</p>}
+      {availability === "sending" && <p className="disabled-note">{actuator.state ? `Mematikan ${copy.label.toLowerCase()}...` : `Menyalakan ${copy.label.toLowerCase()}...`}</p>}
+      {disabled && availability !== "sending" && <p className="disabled-note">{availabilityVisual.message}</p>}
       <div className="button-row">
         {!isManual ? (
           <button className="btn outline" type="button" onClick={() => onManualRequest(actuatorKey)} disabled={disabled}>
-            {availability === "sending" ? "Mengirim..." : "Ubah ke Manual"}
+            {availability === "sending" ? "Menyiapkan kontrol..." : "Buka Kontrol Manual"}
           </button>
         ) : (
           <>

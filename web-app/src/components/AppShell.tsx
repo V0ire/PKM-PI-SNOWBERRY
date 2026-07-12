@@ -20,7 +20,7 @@ export function AppShell({
     <div className="app-shell">
       <TopBar connection={connection} />
       <main>{children}</main>
-      <BottomNav page={page} onChange={onPageChange} />
+      {page !== "check" && <BottomNav page={page} onChange={onPageChange} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

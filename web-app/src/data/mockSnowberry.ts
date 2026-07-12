@@ -81,22 +81,22 @@ export const ACTUATOR_COPY: Record<ActuatorKey, ActuatorCopy> = {
       "Pompa tidak akan mengikuti kelembapan media sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
   },
   mist: {
-    label: "Pengatur Kelembapan",
-    helpingText: "Menyemprotkan kabut halus dan meniupkannya agar kelembapan merata.",
-    activeText: "Pengatur kelembapan sedang membantu udara tetap nyaman.",
-    automaticText: "Pengatur kelembapan menyala saat udara terlalu kering.",
-    manualModalTitle: "Ubah Pengatur Kelembapan ke Manual?",
+    label: "Kabut",
+    helpingText: "Menyemprotkan kabut halus saat udara terlalu kering.",
+    activeText: "Kabut sedang membantu menaikkan kelembapan udara.",
+    automaticText: "Kabut menyala saat udara terlalu kering, lalu mati saat cukup.",
+    manualModalTitle: "Ubah Kabut ke Manual?",
     manualModalBody:
-      "Pengatur kelembapan tidak akan mengikuti kelembapan udara sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
+      "Kabut tidak akan mengikuti kelembapan udara sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
   },
   fan: {
-    label: "Kipas Pengatur Kelembapan",
-    helpingText: "Meniup kabut dari box pengatur kelembapan ke greenhouse.",
-    activeText: "Kipas pengatur kelembapan sedang membantu menyebarkan kabut.",
-    automaticText: "Kipas pengatur kelembapan bekerja bersama kabut saat kelembapan perlu dibantu.",
-    manualModalTitle: "Ubah Pengatur Kelembapan ke Manual?",
+    label: "Kipas",
+    helpingText: "Membantu sirkulasi udara dan membuang lembap berlebih.",
+    activeText: "Kipas sedang membantu menjaga udara tetap bergerak.",
+    automaticText: "Kipas menyala saat suhu atau kelembapan udara terlalu tinggi.",
+    manualModalTitle: "Ubah Kipas ke Manual?",
     manualModalBody:
-      "Pengatur kelembapan tidak akan mengikuti kelembapan udara sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
+      "Kipas tidak akan mengikuti suhu dan kelembapan udara sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
   },
 };
 

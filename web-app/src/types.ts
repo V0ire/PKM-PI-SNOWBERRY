@@ -1,4 +1,4 @@
-export type Page = "dashboard" | "plants" | "tools" | "history";
+export type Page = "dashboard" | "plants" | "tools" | "history" | "check";
 
 export type ConnectionState = "online" | "stale" | "offline";
 export type SensorStatusKey = "safe" | "warning" | "danger" | "unknown";
@@ -142,7 +142,7 @@ export type CropPhaseInfo = {
   focus: string;
   risk: string;
   action: string;
-  targets: Record<"Suhu ideal" | "Kelembapan ideal" | "Cahaya ideal" | "Kelembapan media ideal", string>;
+  targets: Record<string, string>;
 };
 
 export type DailyCheckItem = {

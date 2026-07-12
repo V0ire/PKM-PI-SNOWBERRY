@@ -2,14 +2,6 @@ import { CircleCheck, CloudOff, CloudSun, TriangleAlert } from "lucide-react";
 import type { SensorStatusKey } from "../types";
 import { sensorVisual } from "../utils/status";
 
-function getGreeting(now: number): string {
-  const hour = new Date(now).getHours();
-  if (hour >= 5 && hour < 12) return "Selamat pagi!";
-  if (hour >= 12 && hour < 17) return "Selamat siang!";
-  if (hour >= 17 && hour < 21) return "Selamat sore!";
-  return "Selamat malam!";
-}
-
 const STATUS_ICON: Record<SensorStatusKey, typeof CircleCheck> = {
   safe: CircleCheck,
   warning: CloudSun,
@@ -22,38 +14,34 @@ export function GreenhouseHero({
   title,
   detail,
   action,
-  now,
+  phase,
+  issueCount,
+  onOpenChecks,
   updatedText,
 }: {
   tone: SensorStatusKey;
   title: string;
   detail: string;
   action: string;
-  now: number;
+  phase: string;
+  issueCount: number;
+  onOpenChecks: () => void;
   updatedText?: string;
 }) {
   const visual = sensorVisual[tone];
-  const greeting = getGreeting(now);
   const Icon = STATUS_ICON[tone];
 
   return (
     <section className={`greenhouse-hero ${visual.className}`}>
-      <div className="hero-illustration">
-        <span className={`hero-weather ${visual.className}`}>
-          <Icon size={30} strokeWidth={2.2} aria-hidden="true" />
-        </span>
-        <span className={`hero-badge ${visual.className}`}>
-          <Icon size={15} strokeWidth={2.5} aria-hidden="true" />
-          {visual.label}
-        </span>
-      </div>
       <div className="hero-copy">
-        <p className="hero-greeting">{greeting}</p>
-        <p className="eyebrow">Aksi Utama</p>
+        <div className="hero-meta">
+          <span>{phase}</span>
+          <span><Icon size={14} aria-hidden="true" /> {visual.label}</span>
+        </div>
         <h1>{title}</h1>
         <p>{detail}</p>
         <p className="hero-action">{action}</p>
-        {updatedText && <span className="hero-updated">{updatedText}</span>}
+        {issueCount > 0 && <button type="button" className="hero-check-link" onClick={onOpenChecks}>Ada {issueCount} masalah lain</button>}
       </div>
     </section>
   );

@@ -122,7 +122,7 @@ export const formVisual: Record<FormState, { label: string; className: string; m
 };
 
 export function getConnectionState(status: RealtimeStatus, now: number): ConnectionState {
-  if (!status.device.online) return "offline";
+  if (!status.device || !status.device.online) return "offline";
   if (now - status.last_seen > 300_000) return "stale";
   return "online";
 }
@@ -142,10 +142,10 @@ export function getGrowthPhaseInfo(plantingDate: string, now = Date.now()): Crop
       risk: "Media terlalu basah dapat membuat akar mudah busuk, terutama jika udara ikut lembap.",
       action: "Cek daun rusak dan pastikan penyiraman tetap bertahap.",
       targets: {
-        "Suhu ideal": "18-24 °C",
+        "Suhu siang": "20-24 °C",
         "Kelembapan ideal": "60-75%",
-        "Cahaya ideal": "12-16 jam per hari",
-        "Kelembapan media ideal": "60-70%",
+        "Cahaya harian": "12-15 DLI",
+        "Kelembapan media": "30-70% kalibrasi lokal",
       },
     };
   }
@@ -162,10 +162,10 @@ export function getGrowthPhaseInfo(plantingDate: string, now = Date.now()): Crop
       risk: "Kelembapan tinggi dapat membuat serbuk sari menggumpal dan meningkatkan risiko jamur pada bunga.",
       action: "Pantau kelembapan malam dan bantu sirkulasi udara saat bunga mulai banyak.",
       targets: {
-        "Suhu ideal": "15-22 °C",
-        "Kelembapan ideal": "50-70%",
-        "Cahaya ideal": "20.000-40.000 lux saat siang",
-        "Kelembapan media ideal": "55-65%",
+        "Suhu siang": "18-22 °C",
+        "Kelembapan ideal": "60-70%",
+        "Cahaya harian": "15-20 DLI",
+        "Kelembapan media": "30-70% kalibrasi lokal",
       },
     };
   }
@@ -181,10 +181,10 @@ export function getGrowthPhaseInfo(plantingDate: string, now = Date.now()): Crop
     risk: "Media terlalu basah dapat membuat buah pecah, sedangkan udara lembap memudahkan jamur berkembang.",
     action: "Panen buah matang, buang buah rusak, dan hindari penyiraman berlebih.",
     targets: {
-      "Suhu ideal": "18-25 °C",
-      "Kelembapan ideal": "55-70%",
-      "Cahaya ideal": "Cukup untuk pembentukan gula",
-      "Kelembapan media ideal": "50-60%",
+        "Suhu siang": "18-22 °C",
+        "Kelembapan ideal": "60-70%",
+        "Cahaya harian": "18-25 DLI",
+        "Kelembapan media": "30-70% kalibrasi lokal",
     },
   };
 }

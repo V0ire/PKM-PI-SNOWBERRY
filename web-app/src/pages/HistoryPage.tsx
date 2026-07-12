@@ -12,6 +12,13 @@ function timeLabel(ts: number) {
   }).format(ts);
 }
 
+function growlightDurationMinutes(history: TelemetryPoint[]) {
+  return history.slice(1).reduce((total, point, index) => {
+    const previous = history[index];
+    return previous.gl ? total + Math.max(0, point.ts - previous.ts) / 60_000 : total;
+  }, 0);
+}
+
 function buildHistorySummary(history: TelemetryPoint[]) {
   if (history.length === 0) return [];
 
@@ -30,8 +37,18 @@ function buildHistorySummary(history: TelemetryPoint[]) {
 
 export function HistoryPage({ history, isLoading }: { history: TelemetryPoint[]; isLoading: boolean }) {
   const [range, setRange] = useState("Hari Ini");
-  const summary = useMemo(() => buildHistorySummary(history), [history]);
-  const times = history.map((point) => point.ts);
+  const [chart, setChart] = useState<"temperature" | "humidity" | "light" | "soil">("temperature");
+  const visibleHistory = range === "Hari Ini" ? history : history.slice(-Math.min(history.length, 7 * 24));
+  const summary = useMemo(() => buildHistorySummary(visibleHistory), [visibleHistory]);
+  const times = visibleHistory.map((point) => point.ts);
+  const growlightMinutes = growlightDurationMinutes(visibleHistory);
+  const hasIssue = visibleHistory.some((point) => point.h >= 80 || point.s <= 30 || point.t >= 28);
+  const chartConfig = {
+    temperature: { title: "Suhu Udara", unit: "°C", values: visibleHistory.map((point) => point.t), detail: "Suhu berubah mengikuti panas matahari dan sirkulasi udara greenhouse." },
+    humidity: { title: "Kelembapan Udara", unit: "%", values: visibleHistory.map((point) => point.h), detail: "Kelembapan terlalu tinggi terlalu lama dapat meningkatkan risiko jamur." },
+    light: { title: "Cahaya Alami", unit: "lux", values: visibleHistory.map((point) => point.l), detail: `Lampu tanam menyala sekitar ${Math.round(growlightMinutes)} menit. Cahaya alami dan durasi lampu ditampilkan terpisah sampai lampu dikalibrasi di level tanaman.` },
+    soil: { title: "Kelembapan Media", unit: "%", values: visibleHistory.map((point) => point.s), detail: "Media perlu lembap stabil agar akar mendapat cukup air dan udara." },
+  }[chart];
 
   if (isLoading) {
     return (
@@ -52,37 +69,43 @@ export function HistoryPage({ history, isLoading }: { history: TelemetryPoint[];
   return (
     <div className="page-stack">
       <SectionHero eyebrow="Pola Greenhouse" title="Riwayat Greenhouse">
-        <p>Lihat cerita kondisi hari ini tanpa membaca tabel data mentah.</p>
+          <p>Lihat pola kondisi greenhouse dengan bahasa sederhana.</p>
       </SectionHero>
 
       <section className="segmented" aria-label="Pilih rentang riwayat">
-        {["Hari Ini", "7 Hari", "30 Hari"].map((item) => (
+        {["Hari Ini", "7 Hari"].map((item) => (
           <button className={item === range ? "active" : ""} type="button" onClick={() => setRange(item)} key={item}>
             {item}
           </button>
         ))}
       </section>
 
-      {history.length === 0 ? (
+      {visibleHistory.length === 0 ? (
         <section className="empty-state">
           <h2>Belum ada data riwayat hari ini.</h2>
           <p>Data akan muncul setelah perangkat mengirim pembacaan sensor.</p>
         </section>
       ) : (
         <>
-          <section className="history-summary">
-            <h2>{range === "Hari Ini" ? "Cerita Hari Ini" : `Cerita ${range}`}</h2>
-            {summary.map((item) => (
-              <p key={item}>{item}</p>
-            ))}
-          </section>
+            <section className={`history-summary ${hasIssue ? "tone-warning" : "tone-safe"}`}>
+              <h2>{hasIssue ? "Hari ini perlu perhatian" : "Kondisi hari ini aman"}</h2>
+              <p>{summary.length} kondisi tercatat pada data yang tersedia.</p>
+            </section>
 
-          <section className="chart-grid">
-            <MetricChart title="Suhu Udara" unit="°C" values={history.map((point) => point.t)} times={times} />
-            <MetricChart title="Kelembapan Udara" unit="%" values={history.map((point) => point.h)} times={times} />
-            <MetricChart title="Cahaya" unit="lux" values={history.map((point) => point.l)} times={times} />
-            <MetricChart title="Kelembapan Media" unit="%" values={history.map((point) => point.s)} times={times} />
-          </section>
+            <section className="chart-switcher" aria-label="Pilih kondisi riwayat">
+              {([ ["temperature", "Suhu"], ["humidity", "Udara"], ["light", "Cahaya"], ["soil", "Media"] ] as const).map(([key, label]) => (
+                <button key={key} className={chart === key ? "active" : ""} type="button" onClick={() => setChart(key)}>{label}</button>
+              ))}
+            </section>
+
+            <section className="history-summary">
+              <h2>{chartConfig.title}</h2>
+              <p>{chartConfig.detail}</p>
+            </section>
+
+            <section className="chart-grid chart-grid-single">
+              <MetricChart title={chartConfig.title} unit={chartConfig.unit} values={chartConfig.values} times={times} />
+            </section>
         </>
       )}
     </div>

@@ -6,7 +6,7 @@
 //   VITE_FIREBASE_PROJECT_ID=...
 //   VITE_FIREBASE_APP_ID=...
 //   VITE_FIREBASE_AUTH_DOMAIN=...
-//   VITE_SNOWBERRY_DEVICE_ID=greenhouse-01
+//   VITE_SNOWBERRY_DEVICE_ID=snowberry-001
 
 export type FirebaseEnv = {
   apiKey: string;
@@ -27,7 +27,7 @@ export function readFirebaseEnv(): FirebaseEnv | null {
     authDomain: env.VITE_FIREBASE_AUTH_DOMAIN ?? `${projectId}.firebaseapp.com`,
     projectId,
     appId,
-    deviceId: env.VITE_SNOWBERRY_DEVICE_ID ?? "greenhouse-01",
+    deviceId: env.VITE_SNOWBERRY_DEVICE_ID ?? "snowberry-001",
   };
 }
 

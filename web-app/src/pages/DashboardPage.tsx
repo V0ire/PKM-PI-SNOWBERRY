@@ -1,17 +1,17 @@
-import { useEffect, useState } from "react";
-import { CircleCheck, Clock, Droplets, Leaf, Power, Sprout, Sun, Thermometer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Droplets, Leaf, Power, Sprout, Sun, Thermometer } from "lucide-react";
+import { useState } from "react";
 import type { ActuatorAvailability, ActuatorKey, ConnectionState, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
 import { formatTimeAgo } from "../utils/date";
 import { connectionVisual, getDashboardSummary, getGrowthPhaseInfo, getSensorMetrics, sensorVisual } from "../utils/status";
 import { ActuatorCard } from "../components/ActuatorCard";
+import { HumidifierCard } from "../components/HumidifierCard";
 import { CardSkeleton, SummarySkeleton } from "../components/LoadingSkeleton";
 import { GreenhouseHero } from "../components/GreenhouseHero";
 import { NoticeBanner } from "../components/NoticeBanner";
 import { SensorGauge } from "../components/SensorGauge";
 import { StatusPill } from "../components/StatusPill";
 
-type SubTab = "today" | "plants" | "tools" | "check";
-export type DashboardTab = SubTab;
+export type DashboardTab = "today" | "plants" | "tools";
 
 const SENSOR_ICONS = {
   temperature: Thermometer,
@@ -45,6 +45,14 @@ function sensorPercent(id: string, status: RealtimeStatus, thresholds: Threshold
   }
 }
 
+function naturalDliEstimate(history: TelemetryPoint[]) {
+  return history.slice(1).reduce((total, point, index) => {
+    const previous = history[index];
+    const hours = Math.max(0, point.ts - previous.ts) / 3_600_000;
+    return total + (previous.l / 50) * 3600 * hours / 1_000_000;
+  }, 0);
+}
+
 export function DashboardPage({
   status,
   thresholds,
@@ -58,6 +66,7 @@ export function DashboardPage({
   onExtend,
   onAuto,
   onRewaterRequest,
+  onOpenChecks,
   initialTab = "today",
 }: {
   status: RealtimeStatus;
@@ -72,11 +81,12 @@ export function DashboardPage({
   onExtend: (key: ActuatorKey) => void;
   onAuto: (key: ActuatorKey) => void;
   onRewaterRequest: () => void;
+  onOpenChecks: (checks: import("../types").DailyCheckItem[]) => void;
   initialTab?: DashboardTab;
 }) {
-  const [subTab, setSubTab] = useState<SubTab>(initialTab);
-
-  useEffect(() => setSubTab(initialTab), [initialTab]);
+  const subTab = initialTab;
+  const [plantIndex, setPlantIndex] = useState(0);
+  const [plantDirection, setPlantDirection] = useState<"next" | "previous">("next");
 
   if (isLoading) {
     return (
@@ -100,11 +110,13 @@ export function DashboardPage({
   }).filter((metric) => metric.issue).slice(0, 2);
   const connectionCopy = connectionVisual[connection];
   const activeTools = [
-    status.actuators.growlight.state && "Lampu",
-    status.actuators.pump.state && "Pompa",
-    (status.actuators.mist.state || status.actuators.fan.state) && "Pengatur Kelembapan",
+    status.actuators?.growlight?.state && "Lampu",
+    status.actuators?.pump?.state && "Pompa",
+    ((status.actuators?.mist?.state || status.actuators?.fan?.state)) && "Pengatur Kelembapan",
   ].filter(Boolean);
-  const maxChecks = Math.min(summary.checks.length, 3);
+  const actionableChecks = summary.checks.filter((check) => check.tone !== "safe");
+  const dliTarget = phase.key === "vegetative" ? 15 : phase.key === "flowering" ? 20 : 25;
+  const estimatedDli = naturalDliEstimate(history);
 
   return (
     <div className="page-stack dashboard-page">
@@ -120,26 +132,7 @@ export function DashboardPage({
         </NoticeBanner>
       )}
 
-      <nav className="segmented sub-nav" aria-label="Navigasi Kondisi">
-        <button type="button" className={subTab === "today" ? "active" : ""} onClick={() => setSubTab("today")}>
-          <Clock size={16} aria-hidden="true" />
-          Hari Ini
-        </button>
-        <button type="button" className={subTab === "plants" ? "active" : ""} onClick={() => setSubTab("plants")}>
-          <Sprout size={16} aria-hidden="true" />
-          Tanaman
-        </button>
-        <button type="button" className={subTab === "tools" ? "active" : ""} onClick={() => setSubTab("tools")}>
-          <Power size={16} aria-hidden="true" />
-          Alat
-        </button>
-        <button type="button" className={subTab === "check" ? "active" : ""} onClick={() => setSubTab("check")}>
-          <CircleCheck size={16} aria-hidden="true" />
-          Cek {maxChecks > 0 && summary.checks[0]?.tone !== "safe" ? `(${maxChecks})` : ""}
-        </button>
-      </nav>
-
-      {/* === TAB: HARI INI === */}
+      {/* === BERANDA === */}
       {subTab === "today" && (
         <>
           <GreenhouseHero
@@ -147,7 +140,9 @@ export function DashboardPage({
             title={summary.title}
              detail={summary.detail}
              action={summary.action}
-             now={now}
+             phase={`Fase ${phase.name}`}
+             issueCount={Math.max(0, actionableChecks.length - 1)}
+             onOpenChecks={() => onOpenChecks(actionableChecks.slice(1))}
              updatedText={`Diperbarui ${formatTimeAgo(status.last_seen, now)}`}
            />
 
@@ -157,17 +152,6 @@ export function DashboardPage({
              </button>
            )}
  
-           {importantMetrics.length > 0 && (
-             <section className="issue-list" aria-label="Kondisi yang perlu diperhatikan">
-               {importantMetrics.map((metric) => (
-                 <NoticeBanner key={metric.id} tone={metric.status === "danger" ? "danger" : "warning"} title={metric.label}>
-                   <p>{metric.meaning}</p>
-                   <p><strong>{metric.action}</strong></p>
-                 </NoticeBanner>
-               ))}
-             </section>
-           )}
-
            <section className="sensor-gauge-grid" aria-label="Kondisi utama">
             {metrics.map((metric) => {
               const Icon = SENSOR_ICONS[metric.id];
@@ -179,7 +163,7 @@ export function DashboardPage({
                   status={connection === "offline" ? "unknown" : metric.status}
                   percent={sensorPercent(metric.id, status, thresholds)}
                   icon={<Icon size={18} strokeWidth={2.2} aria-hidden="true" />}
-                  onClick={() => setSubTab("plants")}
+                  onClick={undefined}
                 />
               );
             })}
@@ -194,54 +178,45 @@ export function DashboardPage({
               </span>
               <span>Diperbarui {formatTimeAgo(status.last_seen, now)}</span>
             </div>
-            {maxChecks > 0 && summary.checks[0]?.tone !== "safe" && (
-              <button className="btn outline" type="button" onClick={() => setSubTab("check")}>
-                {maxChecks} hal perlu dicek
-              </button>
-            )}
+
           </section>
         </>
       )}
 
-      {/* === TAB: TANAMAN === */}
+      {/* === TANAMAN === */}
       {subTab === "plants" && (
         <>
-          <section className="phase-banner">
-            <span className="crop-badge">Fase {phase.name} - HST {phase.hst}</span>
-            <p>{phase.focus}</p>
-          </section>
+          <header className="page-heading"><p className="eyebrow">Kondisi Tanaman</p><h1>Tanaman</h1><p>Lihat arti setiap kondisi satu per satu.</p></header>
+          {(() => {
+            const metric = metrics[plantIndex];
+            const change = (direction: "next" | "previous") => {
+              setPlantDirection(direction);
+              setPlantIndex((index) => index + (direction === "next" ? 1 : -1));
+            };
+            return <section key={metric.id} className={`plant-walkthrough plant-slide-${plantDirection} tone-${metric.status}`} aria-label="Kondisi tanaman terperinci">
+              <span className="plant-progress">{plantIndex + 1} dari {metrics.length}</span>
+              <h2>{metric.label}</h2><strong className="plant-value">{metric.value}</strong>
+              <StatusPill label={`${sensorVisual[metric.status].label} · ${metric.issue ?? "Nyaman"}`} className={`tone-${metric.status}`} />
+              <p>{metric.meaning}</p><strong>{metric.action}</strong>
+              {metric.id === "light" && <div className="light-guidance"><strong>Estimasi DLI Alami: {estimatedDli.toFixed(1)} / {dliTarget} DLI</strong><span>Patokan cahaya saat ini: {thresholds.lux_low.toLocaleString("id-ID")}–{thresholds.lux_high.toLocaleString("id-ID")} lux</span><small>Estimasi dari cahaya alami. Durasi lampu tanam dicatat terpisah.</small></div>}
+              <div className="walkthrough-actions">
+                <button className="btn outline" type="button" disabled={plantIndex === 0} onClick={() => change("previous")}><ChevronLeft size={18} aria-hidden="true" /> Sebelumnya</button>
+                <button className="btn primary" type="button" disabled={plantIndex === metrics.length - 1} onClick={() => change("next")}>Berikutnya <ChevronRight size={18} aria-hidden="true" /></button>
+              </div>
+            </section>;
+          })()}
 
-          <section className="plant-companion-grid">
-            <article className="card target-card">
-              <h2>Target Normal Fase Ini</h2>
-              <p>Angka ini menjadi patokan cepat saat melihat kondisi greenhouse.</p>
-              <dl>
-                {Object.entries(phase.targets).map(([label, value]) => (
-                  <div key={label}>
-                    <dt>{label}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </article>
-
-            <article className="card plant-focus-card">
-              <h2>Yang Perlu Diperhatikan</h2>
-              <p>{phase.risk}</p>
-              {importantMetrics.length > 0 ? (
-                <div className="plant-focus-list">
-                  {importantMetrics.map((metric) => (
-                    <div key={metric.id}>
-                      <strong>{metric.shortLabel}</strong>
-                      <p>{connection === "offline" ? "Data terakhir yang diterima." : metric.meaning}</p>
-                    </div>
-                  ))}
+          <article className="card target-card">
+            <h2>Patokan Fase {phase.name}</h2>
+            <dl>
+              {Object.entries(phase.targets).map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
                 </div>
-              ) : (
-                <p className="summary-action">Kondisi utama masih sesuai untuk fase {phase.name.toLowerCase()}.</p>
-              )}
-            </article>
-          </section>
+              ))}
+            </dl>
+          </article>
         </>
       )}
 
@@ -253,14 +228,16 @@ export function DashboardPage({
             <p>Kontrol manual berlaku 30 menit, lalu kembali otomatis.</p>
           </div>
 
-          {(["growlight", "pump", "mist", "fan"] as ActuatorKey[]).map((key) => {
+          {(["growlight", "pump"] as ActuatorKey[]).map((key) => {
+            const actuator = status.actuators?.[key];
+            if (!actuator) return null;
             const availability: ActuatorAvailability =
               connection === "offline" ? "offline_disabled" : sendingActuator === key ? "sending" : "ready";
             return (
               <ActuatorCard
                 key={key}
                 actuatorKey={key}
-                actuator={status.actuators[key]}
+                actuator={actuator}
                 now={now}
                 availability={availability}
                 onManualRequest={onManualRequest}
@@ -270,42 +247,16 @@ export function DashboardPage({
               />
             );
           })}
-        </section>
-      )}
-
-      {/* === TAB: CEK === */}
-      {subTab === "check" && (
-        <section className="daily-check-card">
-          {summary.checks[0]?.tone === "safe" && summary.checks.length <= 2 ? (
-            <div className="check-empty">
-              <span className="check-empty-icon">
-                <Leaf size={42} strokeWidth={1.8} aria-hidden="true" />
-              </span>
-              <h2>Semua aman hari ini!</h2>
-              <p>Tidak ada yang perlu dicek mendesak. Santai saja, greenhouse Anda baik-baik saja.</p>
-            </div>
-          ) : (
-            <>
-              <div className="section-heading">
-                <h2>Yang Perlu Dicek</h2>
-                <p>Prioritas tindakan untuk stroberi putih hari ini.</p>
-              </div>
-              <div className="daily-check-list">
-                {summary.checks.slice(0, 3).map((check) => (
-                  <article className={`check-item ${sensorVisual[check.tone].className}`} key={check.id}>
-                    <div>
-                      <strong>{check.title}</strong>
-                      <p>{check.body}</p>
-                      <p className="action-text">{check.action}</p>
-                    </div>
-                    <StatusPill label={sensorVisual[check.tone].label} className={sensorVisual[check.tone].className} />
-                  </article>
-                ))}
-              </div>
-            </>
+          {status.actuators && (
+            <HumidifierCard
+              actuators={status.actuators}
+              availability={connection === "offline" || sendingActuator === "mist" || sendingActuator === "fan" ? "offline_disabled" : "ready"}
+              onManualRequest={() => onManualRequest("mist")}
+            />
           )}
         </section>
       )}
+
     </div>
   );
 }
