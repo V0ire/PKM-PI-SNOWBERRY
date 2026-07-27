@@ -3,6 +3,8 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <WiFiUdp.h>
+#include <sys/time.h>
 #include "actuators.h"
 #include "control.h"
 
@@ -22,6 +24,9 @@ uint32_t g_cloudRetryAfter = 0;
 uint32_t g_lastNtpAttempt = 0;
 uint32_t g_lastNtpWaitLog = 0;
 bool g_ntpReported = false;
+WiFiUDP g_ntpUdp;
+bool g_ntpProbePending = false;
+uint32_t g_ntpProbeStarted = 0;
 
 String g_lastCommandId = "";
 String g_ackCommandId = "";
@@ -43,6 +48,59 @@ void requestNtpSync(uint32_t nowMs) {
                 WiFi.RSSI(),
                 WiFi.gatewayIP().toString().c_str(),
                 WiFi.dnsIP().toString().c_str());
+
+  IPAddress serverIp;
+  if (!WiFi.hostByName("time.google.com", serverIp)) {
+    Serial.println("[ntp] DNS lookup failed for time.google.com.");
+    return;
+  }
+
+  uint8_t packet[48] = {};
+  packet[0] = 0x1B;  // NTP client request, version 3
+  g_ntpUdp.stop();
+  g_ntpUdp.begin(2390);
+  g_ntpUdp.beginPacket(serverIp, 123);
+  g_ntpUdp.write(packet, sizeof(packet));
+  if (!g_ntpUdp.endPacket()) {
+    Serial.printf("[ntp] UDP send failed to %s:123.\n", serverIp.toString().c_str());
+    return;
+  }
+  g_ntpProbePending = true;
+  g_ntpProbeStarted = nowMs;
+  Serial.printf("[ntp] Direct UDP probe sent to %s:123.\n", serverIp.toString().c_str());
+}
+
+void pollDirectNtp(uint32_t nowMs) {
+  if (!g_ntpProbePending) return;
+
+  const int packetSize = g_ntpUdp.parsePacket();
+  if (packetSize >= 48) {
+    uint8_t packet[48];
+    g_ntpUdp.read(packet, sizeof(packet));
+    const uint32_t ntpSeconds =
+      (static_cast<uint32_t>(packet[40]) << 24) |
+      (static_cast<uint32_t>(packet[41]) << 16) |
+      (static_cast<uint32_t>(packet[42]) << 8) |
+      static_cast<uint32_t>(packet[43]);
+    constexpr uint32_t NTP_TO_UNIX = 2208988800UL;
+    if (ntpSeconds > NTP_TO_UNIX + 1500000000UL) {
+      timeval tv = {static_cast<time_t>(ntpSeconds - NTP_TO_UNIX), 0};
+      settimeofday(&tv, nullptr);
+      Serial.printf("[ntp] Direct UDP response received. epoch=%lld\n",
+                    static_cast<long long>(tv.tv_sec));
+    } else {
+      Serial.println("[ntp] Direct UDP response contained invalid time.");
+    }
+    g_ntpProbePending = false;
+    g_ntpUdp.stop();
+    return;
+  }
+
+  if (nowMs - g_ntpProbeStarted >= 5000UL) {
+    Serial.println("[ntp] Direct UDP probe timed out; no UDP/123 response reached ESP32.");
+    g_ntpProbePending = false;
+    g_ntpUdp.stop();
+  }
 }
 
 bool cloudRetryReady(uint32_t nowMs) {
@@ -316,6 +374,7 @@ void begin(const Config& cfg) {
 void loop(uint32_t nowMs) {
   checkWiFi();
   if (!g_online) return;
+  pollDirectNtp(nowMs);
 
   if (ntpTimeReady()) {
     if (!g_ntpReported) {
