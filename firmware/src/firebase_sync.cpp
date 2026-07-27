@@ -190,10 +190,11 @@ const char* GOOGLE_CA_CERT =
 
 void checkWiFi() {
   if (WiFi.status() == WL_CONNECTED) {
-    g_online = true;
-    if (!g_connectionReported) {
-      g_connectionReported = true;
+    if (!g_online) {
+      g_online = true;
       Serial.printf("[wifi] Connected. IP=%s\n", WiFi.localIP().toString().c_str());
+      // Re-trigger NTP config when WiFi connects
+      configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
     }
     return;
   }
