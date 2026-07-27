@@ -50,6 +50,11 @@ void logStatus(uint32_t nowMs) {
 
 // Kalibrasi soil via tombol: tekan saat kering -> lepas -> tekan saat basah.
 void runSoilCalibration() {
+  const uint32_t now = millis();
+  for (uint8_t i = 0; i < static_cast<uint8_t>(ActuatorKey::COUNT); ++i) {
+    actuators::forceOff(static_cast<ActuatorKey>(i), now);
+  }
+  Serial.println(">> Kalibrasi: semua aktuator OFF.");
   Serial.println(">> Kalibrasi soil: pastikan sensor di media KERING, tekan tombol lagi...");
   while (digitalRead(pins::BUTTON) == LOW) delay(10);  // tunggu lepas
   while (digitalRead(pins::BUTTON) == HIGH) delay(10); // tunggu tekan (kering)
@@ -92,24 +97,12 @@ void setup() {
   // 2) Muat threshold dari NVS. Jika gagal, pakai default + fault.
   if (!storage::begin() || !storage::loadThresholds(g_thresholds)) {
     g_thresholds = Thresholds{};  // default aman Ciwidey
-    g_thresholds.soil_adc_dry = 3500;
-    g_thresholds.soil_adc_wet = 1700;
     g_activeFault = Fault::NVS_ERROR;
     Serial.println("[boot] NVS kosong/korupsi -> pakai default. Pump AUTO nonaktif sampai kalibrasi.");
   } else {
     Serial.println("[boot] Threshold dimuat dari NVS.");
   }
 
-  // Temporary breadboard calibration; replace through the calibration flow.
-  if (g_thresholds.soil_adc_dry == 0 || g_thresholds.soil_adc_wet == 0) {
-    g_thresholds.soil_adc_dry = 3500;
-    g_thresholds.soil_adc_wet = 1700;
-    Serial.println("[boot] Kalibrasi soil demo: basah=1700, kering=3500.");
-  }
-  g_thresholds.soil_adc_dry = 3500;
-  g_thresholds.soil_adc_wet = 1700;
-  g_thresholds.pump_pulse_ms = 5000;
-  storage::saveThresholds(g_thresholds);
 
   // 3) Sensor terakhir (setelah safe-state aktif).
   if (!sensors::begin()) {

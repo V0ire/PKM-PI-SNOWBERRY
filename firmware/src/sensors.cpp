@@ -14,14 +14,6 @@ bool g_bhOk = false;
 uint8_t g_shtFails = 0;
 uint8_t g_bhFails = 0;
 
-float readPsuVoltage() {
-  // Rata-rata beberapa sample untuk stabilitas.
-  uint32_t acc = 0;
-  for (int i = 0; i < 8; i++) acc += analogRead(pins::VOLTAGE_ADC);
-  float raw = acc / 8.0f;
-  float vAdc = raw / psu::ADC_MAX * psu::ADC_REF_V;
-  return vAdc * psu::DIVIDER_RATIO;
-}
 }  // namespace
 
 namespace sensors {
@@ -32,7 +24,7 @@ bool begin() {
   delay(100);  // Beri waktu hardware bus stabil
   analogReadResolution(12);
   analogSetPinAttenuation(pins::SOIL_ADC, ADC_11db);
-  analogSetPinAttenuation(pins::VOLTAGE_ADC, ADC_11db);
+
 
   g_shtOk = g_sht.begin(i2c_addr::SHT30);
   g_bhOk = g_bh.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, i2c_addr::BH1750);
@@ -100,11 +92,9 @@ void read(const Thresholds& t, SensorReading& out, Fault& sensorFault, uint32_t 
     }
   }
 
-  // --- PSU 12V rail ---
-  out.psu_voltage = readPsuVoltage();
-  out.psu_valid = true;
-  if (out.psu_voltage < psu::RAIL_LOW_V && sensorFault == Fault::NONE)
-    sensorFault = Fault::PSU_VOLTAGE_LOW;
+  // GPIO35 tidak dipakai di Rev B. Jangan buat fault dari input floating.
+  out.psu_voltage = 0;
+  out.psu_valid = false;
 }
 
 }  // namespace sensors

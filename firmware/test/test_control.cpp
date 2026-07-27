@@ -23,6 +23,7 @@ static SensorReading mkSensor() {
 int main() {
   Thresholds t;                 // default Ciwidey
   t.soil_adc_dry=3000; t.soil_adc_wet=1000;  // sudah kalibrasi
+  t.pump_pulse_ms=1000; t.soak_period_ms=5000;
   control::ManualCommand noCmd;
   control::TimeCtx tsync; tsync.synced=true; tsync.hour=12; tsync.epoch_ms=1000LL*3600*12;
   Fault f;
@@ -41,32 +42,32 @@ int main() {
   Thresholds uncal=t; uncal.soil_adc_dry=0;
   CHECK(!control::soilPercent(uncal,2000,pct), "soil belum kalibrasi ditolak");
 
-  // 3) FAN: RH tinggi -> fan ON, mist OFF
+  // 3) FAN & MIST: Humidifier RH-only (Rev B)
   actuators::initSafeState();
   SensorReading s=mkSensor(); s.humidity_pct=90; // > rh_high(85)
   control::step(t,s,noCmd,tsync,1000000,f);
-  CHECK(actuators::isOn(AK::FAN), "RH tinggi -> FAN ON");
+  CHECK(!actuators::isOn(AK::FAN), "RH tinggi -> Humidifier OFF");
   CHECK(!actuators::isOn(AK::MIST), "RH tinggi -> MIST OFF");
 
-  // 4) FAN: suhu tinggi -> fan ON
+  // 4) Suhu tinggi tidak memicu humidifier di Rev B (RH-only)
   actuators::initSafeState();
   s=mkSensor(); s.temperature_c=30; // > temp_high(28)
   control::step(t,s,noCmd,tsync,2000000,f);
-  CHECK(actuators::isOn(AK::FAN), "suhu tinggi -> FAN ON");
+  CHECK(!actuators::isOn(AK::FAN), "suhu tinggi -> Humidifier tetap OFF (RH-only)");
 
-  // 5) Konflik: RH rendah + suhu tinggi -> fan menang, mist ditahan
+  // 5) Kering (RH 60% <= rh_low 65%) -> 4 pin humidifier ON
   actuators::initSafeState();
   s=mkSensor(); s.humidity_pct=60; s.temperature_c=30; // kering & panas
   control::step(t,s,noCmd,tsync,3000000,f);
-  CHECK(actuators::isOn(AK::FAN), "kering+panas -> FAN ON");
-  CHECK(!actuators::isOn(AK::MIST), "kering+panas -> MIST ditahan (tidak melawan)");
+  CHECK(actuators::isOn(AK::FAN), "kering -> FAN ON");
+  CHECK(actuators::isOn(AK::MIST), "kering -> MIST ON");
 
-  // 6) MIST: kering + suhu normal -> mist ON
+  // 6) MIST: kering + suhu normal -> 4 pin humidifier ON
   actuators::initSafeState();
   s=mkSensor(); s.humidity_pct=60; s.temperature_c=22;
   control::step(t,s,noCmd,tsync,4000000,f);
   CHECK(actuators::isOn(AK::MIST), "kering+suhu normal -> MIST ON");
-  CHECK(!actuators::isOn(AK::FAN), "kering+suhu normal -> FAN OFF");
+  CHECK(actuators::isOn(AK::FAN), "kering+suhu normal -> FAN ON");
 
   // 7) Soil invalid -> pump OFF (safety)
   actuators::initSafeState();
@@ -74,9 +75,9 @@ int main() {
   control::step(t,s,noCmd,tsync,5000000,f);
   CHECK(!actuators::isOn(AK::PUMP), "soil invalid -> PUMP OFF");
 
-  // 8) Soil rendah -> pump mulai menyiram
+  // 8) Soil rendah (<= soil_low 30%) -> pump mulai menyiram
   actuators::initSafeState();
-  s=mkSensor(); s.soil_pct=40; // < soil_low(50)
+  s=mkSensor(); s.soil_pct=25; // < soil_low(30)
   control::step(t,s,noCmd,tsync,6000000,f);
   CHECK(actuators::isOn(AK::PUMP), "soil rendah -> PUMP ON (pulse)");
 
@@ -188,7 +189,7 @@ int main() {
     // Verifikasi urutan operasi untuk semua pin aktuator yang ada.
     // Untuk setiap pin: WRITE_LOW/HIGH harus muncul sebelum MODE_OUTPUT.
     bool orderOk = true;
-    uint8_t targetPins[] = { pins::GROWLIGHT, pins::PUMP, pins::MIST, pins::FAN, pins::SPARE_SSR };
+    uint8_t targetPins[] = { pins::GROWLIGHT, pins::PUMP, pins::MIST, pins::FAN, pins::MIST_2, pins::FAN_2, pins::SPARE_SSR };
     
     for (uint8_t pin : targetPins) {
       int firstWriteIdx = -1;
@@ -211,6 +212,33 @@ int main() {
       }
     }
     CHECK(orderOk, "Safe boot: menulis offLevel sebelum pinMode OUTPUT");
+  }
+
+  // 18) Rev B boot contract: safe boot menulis level LOW fisik ke semua 7 output.
+  {
+    clearPinOps();
+    actuators::initSafeState();
+    bool levelOk = true;
+    uint8_t targetPins[] = { pins::GROWLIGHT, pins::PUMP, pins::MIST, pins::FAN, pins::MIST_2, pins::FAN_2, pins::SPARE_SSR };
+    for (uint8_t pin : targetPins) {
+      for (const auto& rec : g_pinOps) {
+        if (rec.pin == pin && rec.op == PinOp::WRITE_HIGH) {
+          printf("FAIL boot level pin %d: WRITE_HIGH terdeteksi saat safe boot\n", pin);
+          levelOk = false;
+        }
+      }
+    }
+    CHECK(levelOk, "Rev B safe boot: semua 7 output ditulis LOW (tidak ada WRITE_HIGH)");
+  }
+
+  // 19) Humidifier control: 4 physical outputs switch together on RH
+  {
+    actuators::initSafeState();
+    s = mkSensor(); s.humidity_pct = 60; // < rh_low (65)
+    control::step(t, s, noCmd, tsync, 12000000, f);
+    CHECK(actuators::isOn(AK::MIST) && actuators::isOn(AK::FAN) &&
+          actuators::isOn(AK::MIST_2) && actuators::isOn(AK::FAN_2),
+          "Humidifier ON -> 4 physical pins (18,19,23,32) HIGH bersamaan");
   }
 
   printf("\n%s\n", failed==0 ? "ALL PASSED" : "SOME FAILED");

@@ -12,15 +12,13 @@ struct FanMistState {
   bool mistLatched = false;
 } g_fm;
 
-// Pump pulse/soak + proteksi per jam.
+// Pump pulse/soak + dua start dalam rolling 5 jam.
 struct PumpState {
-  bool watering = false;     // sedang dalam siklus watering
-  bool pulseOn = false;      // pump ON pada pulse saat ini
+  bool watering = false;
+  bool pulseOn = false;
   uint32_t phaseStart = 0;
-  uint16_t cyclesThisHour = 0;
-  uint32_t hourWindowStart = 0;
-  uint32_t onMsThisHour = 0;
-  uint32_t pulseStartMs = 0;
+  uint32_t starts[2] = {0, 0};
+  uint8_t startCount = 0;
   float soilAtCycleStart = 0;
   uint8_t cyclesNoEffect = 0;
 } g_pump;
@@ -32,8 +30,10 @@ struct LightState {
   uint32_t lastOnMark = 0;
 } g_light;
 
-Reason g_reason[4] = {Reason::SAFETY_OFF, Reason::SAFETY_OFF,
-                      Reason::SAFETY_OFF, Reason::SAFETY_OFF};
+Reason g_reason[static_cast<int>(AK::COUNT)] = {
+  Reason::SAFETY_OFF, Reason::SAFETY_OFF, Reason::SAFETY_OFF,
+  Reason::SAFETY_OFF, Reason::SAFETY_OFF, Reason::SAFETY_OFF
+};
 
 void setReason(AK k, Reason r) { g_reason[static_cast<int>(k)] = r; }
 
@@ -46,6 +46,20 @@ void drive(AK k, bool wantOn, Reason r, uint32_t nowMs) {
 void safetyOff(AK k, uint32_t nowMs, Reason r) {
   actuators::forceOff(k, nowMs);
   setReason(k, r);
+}
+
+void driveHumidifier(bool wantOn, Reason r, uint32_t nowMs) {
+  drive(AK::MIST, wantOn, r, nowMs);
+  drive(AK::FAN, wantOn, r, nowMs);
+  drive(AK::MIST_2, wantOn, r, nowMs);
+  drive(AK::FAN_2, wantOn, r, nowMs);
+}
+
+void safetyOffHumidifier(uint32_t nowMs, Reason r) {
+  safetyOff(AK::MIST, nowMs, r);
+  safetyOff(AK::FAN, nowMs, r);
+  safetyOff(AK::MIST_2, nowMs, r);
+  safetyOff(AK::FAN_2, nowMs, r);
 }
 }  // namespace
 
@@ -79,74 +93,45 @@ bool soilPercent(const Thresholds& t, uint16_t rawAdc, float& outPct) {
 
 // ---- Fan + Mist dengan resolusi konflik ---------------------------------
 static void controlFanMist(const Thresholds& t, const SensorReading& s, uint32_t nowMs) {
-  const bool tempValid = s.temp_valid;
-  const bool rhValid = s.rh_valid;
-
-  if (!tempValid && !rhValid) {
-    safetyOff(AK::FAN, nowMs, Reason::SENSOR_INVALID);
-    safetyOff(AK::MIST, nowMs, Reason::SENSOR_INVALID);
+  if (!s.rh_valid) {
+    safetyOffHumidifier(nowMs, Reason::SENSOR_INVALID);
     g_fm = {};
     return;
   }
-
-  const bool tooHot = tempValid && s.temperature_c >= t.temp_high;
-  const bool tooHumid = rhValid && s.humidity_pct >= t.rh_high;
-  const bool tooDry = rhValid && s.humidity_pct <= t.rh_low;
-
-  // --- FAN & MIST: Nyala bersamaan jika panas ATAU kering berlebih ---
-  const bool tempBelowFanOff = !tempValid || s.temperature_c <= t.temp_high - 0.5f;
-  const bool rhAboveDryOff = !rhValid || s.humidity_pct >= t.rh_low + 2.0f;
-  const bool rhBelowHumidOff = !rhValid || s.humidity_pct <= t.rh_high - 2.0f;
-
   bool wantOn = g_fm.fanLatched || g_fm.mistLatched;
-  Reason reason = Reason::TEMP_RH_OK;
-
-  if (tooHot || tooDry) {
+  Reason reason = wantOn ? Reason::HUMIDITY_LOW : Reason::HUMIDITY_OK;
+  if (s.humidity_pct <= t.rh_low) {
     wantOn = true;
-    reason = tooHot ? Reason::TEMP_HIGH : Reason::HUMIDITY_LOW;
-  } else if (tooHumid) {
-    // Kelembapan sangat tinggi: nyalakan kipas saja untuk sirkulasi, matikan kabut
-    g_fm.fanLatched = true;
-    g_fm.mistLatched = false;
-    drive(AK::FAN, true, Reason::HUMIDITY_HIGH, nowMs);
-    drive(AK::MIST, false, Reason::HUMIDITY_HIGH, nowMs);
-    return;
-  } else if (tempBelowFanOff && rhAboveDryOff && rhBelowHumidOff) {
+    reason = Reason::HUMIDITY_LOW;
+  } else if (s.humidity_pct >= t.rh_high) {
     wantOn = false;
+    reason = Reason::HUMIDITY_HIGH;
   }
-
   g_fm.fanLatched = wantOn;
   g_fm.mistLatched = wantOn;
-  drive(AK::FAN, wantOn, reason, nowMs);
-  drive(AK::MIST, wantOn, reason, nowMs);
+  driveHumidifier(wantOn, reason, nowMs);
 }
 
 // ---- Pump pulse/soak + proteksi ------------------------------------------
 static Fault controlPump(const Thresholds& t, const SensorReading& s, uint32_t nowMs) {
   if (!s.soil_valid) {
     safetyOff(AK::PUMP, nowMs, Reason::SENSOR_INVALID);
-    g_pump = {};
-    return Fault::NONE;  // fault soil ditetapkan di layer sensor
+    g_pump.watering = false;
+    g_pump.pulseOn = false;
+    return Fault::NONE;
   }
 
-  // Reset jendela per jam.
-  if (g_pump.hourWindowStart == 0 || nowMs - g_pump.hourWindowStart >= 3600000UL) {
-    g_pump.hourWindowStart = nowMs;
-    g_pump.cyclesThisHour = 0;
-    g_pump.onMsThisHour = 0;
+  // Buang start yang lebih tua dari pump_window_ms (5 jam)
+  while (g_pump.startCount > 0 && (nowMs - g_pump.starts[0] >= t.pump_window_ms)) {
+    g_pump.starts[0] = g_pump.starts[1];
+    g_pump.startCount--;
   }
 
   Fault fault = Fault::NONE;
-
   const bool needWater = s.soil_pct <= t.soil_low;
   const bool satisfied = s.soil_pct >= t.soil_high;
-
-  // Batas per jam.
-  if (g_pump.cyclesThisHour >= t.max_pump_cycles_per_hour ||
-      g_pump.onMsThisHour >= t.max_total_pump_on_ms_per_hour) {
+  if (g_pump.startCount >= t.pump_start_limit && !g_pump.watering) {
     safetyOff(AK::PUMP, nowMs, Reason::SOIL_OK);
-    g_pump.watering = false;
-    g_pump.pulseOn = false;
     if (needWater) fault = Fault::PUMP_MAX_CYCLE_REACHED;
     return fault;
   }
@@ -156,8 +141,8 @@ static Fault controlPump(const Thresholds& t, const SensorReading& s, uint32_t n
       g_pump.watering = true;
       g_pump.pulseOn = true;
       g_pump.phaseStart = nowMs;
-      g_pump.pulseStartMs = nowMs;
       g_pump.soilAtCycleStart = s.soil_pct;
+      g_pump.starts[g_pump.startCount++] = nowMs;
     } else {
       safetyOff(AK::PUMP, nowMs, Reason::SOIL_OK);
       return fault;
@@ -174,15 +159,10 @@ static Fault controlPump(const Thresholds& t, const SensorReading& s, uint32_t n
 
   if (g_pump.pulseOn) {
     drive(AK::PUMP, true, Reason::SOIL_LOW, nowMs);
-    g_pump.onMsThisHour += (nowMs - g_pump.pulseStartMs);
-    g_pump.pulseStartMs = nowMs;
     if (nowMs - g_pump.phaseStart >= t.pump_pulse_ms) {
-      // pulse selesai -> masuk soak
       g_pump.pulseOn = false;
       g_pump.phaseStart = nowMs;
       safetyOff(AK::PUMP, nowMs, Reason::SOIL_LOW);
-      g_pump.cyclesThisHour++;
-      // evaluasi efektivitas: apakah soil naik cukup?
       if (s.soil_pct - g_pump.soilAtCycleStart < 1.0f) {
         if (++g_pump.cyclesNoEffect >= 3) fault = Fault::PUMP_NO_EFFECT;
       } else {
@@ -191,12 +171,15 @@ static Fault controlPump(const Thresholds& t, const SensorReading& s, uint32_t n
       g_pump.soilAtCycleStart = s.soil_pct;
     }
   } else {
-    // fase soak: pump OFF sampai soak_period_ms lewat
     safetyOff(AK::PUMP, nowMs, Reason::SOIL_LOW);
     if (nowMs - g_pump.phaseStart >= t.soak_period_ms) {
-      g_pump.pulseOn = true;
-      g_pump.phaseStart = nowMs;
-      g_pump.pulseStartMs = nowMs;
+      if (g_pump.startCount < t.pump_start_limit) {
+        g_pump.pulseOn = true;
+        g_pump.phaseStart = nowMs;
+        g_pump.starts[g_pump.startCount++] = nowMs;
+      } else {
+        g_pump.watering = false;
+      }
     }
   }
   return fault;
@@ -295,7 +278,7 @@ void step(const Thresholds& t, const SensorReading& s, const ManualCommand& cmd,
   auto isManual = [&](AK k) { return manualHandled && manualKey == k; };
 
   // AUTO untuk aktuator yang tidak sedang manual.
-  if (!isManual(AK::FAN) && !isManual(AK::MIST)) {
+  if (!isManual(AK::FAN) && !isManual(AK::MIST) && !isManual(AK::FAN_2) && !isManual(AK::MIST_2)) {
     controlFanMist(t, s, nowMs);
   }
   if (!isManual(AK::PUMP)) {
