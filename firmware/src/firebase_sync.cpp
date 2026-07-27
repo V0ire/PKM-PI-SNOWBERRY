@@ -19,6 +19,9 @@ uint32_t g_lastWiFiCheck = 0;
 uint32_t g_lastStatusPublish = 0;
 uint32_t g_lastCommandPoll = 0;
 uint32_t g_cloudRetryAfter = 0;
+uint32_t g_lastNtpAttempt = 0;
+uint32_t g_lastNtpWaitLog = 0;
+bool g_ntpReported = false;
 
 String g_lastCommandId = "";
 String g_ackCommandId = "";
@@ -31,6 +34,15 @@ int64_t g_manualUntil = 0;
 
 bool ntpTimeReady() {
   return time(nullptr) >= 1500000000;
+}
+
+void requestNtpSync(uint32_t nowMs) {
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
+  g_lastNtpAttempt = nowMs;
+  Serial.printf("[ntp] Sync requested. RSSI=%d gateway=%s dns=%s\n",
+                WiFi.RSSI(),
+                WiFi.gatewayIP().toString().c_str(),
+                WiFi.dnsIP().toString().c_str());
 }
 
 bool cloudRetryReady(uint32_t nowMs) {
@@ -193,8 +205,7 @@ void checkWiFi() {
     if (!g_online) {
       g_online = true;
       Serial.printf("[wifi] Connected. IP=%s\n", WiFi.localIP().toString().c_str());
-      // Re-trigger NTP config when WiFi connects
-      configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
+      requestNtpSync(millis());
     }
     return;
   }
@@ -300,13 +311,23 @@ void begin(const Config& cfg) {
   WiFi.mode(WIFI_STA);
   checkWiFi();
 
-  // Configure NTP time synchronization for SSL cert validation
-  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 }
 
 void loop(uint32_t nowMs) {
   checkWiFi();
-  (void)nowMs;
+  if (!g_online) return;
+
+  if (ntpTimeReady()) {
+    if (!g_ntpReported) {
+      g_ntpReported = true;
+      Serial.printf("[ntp] Time synchronized. epoch=%lld\n",
+                    static_cast<long long>(time(nullptr)));
+    }
+    return;
+  }
+
+  // SNTP is asynchronous. Retry configuration if no response after 30 seconds.
+  if (nowMs - g_lastNtpAttempt >= 30000UL) requestNtpSync(nowMs);
 }
 
 bool online() { return g_online; }
@@ -418,7 +439,10 @@ void updateLiveSensors(const SensorReading& s, Fault fault, uint32_t nowMs) {
   if (!cloudRetryReady(nowMs)) return;
 
   if (!ntpTimeReady()) {
-    Serial.println("[firebase] Waiting for NTP time sync...");
+    if (nowMs - g_lastNtpWaitLog >= 30000UL || g_lastNtpWaitLog == 0) {
+      g_lastNtpWaitLog = nowMs;
+      Serial.println("[firebase] Waiting for NTP time sync; cloud publish paused.");
+    }
     return;
   }
 
