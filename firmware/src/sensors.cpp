@@ -36,6 +36,9 @@ bool begin() {
 
   g_shtOk = g_sht.begin(i2c_addr::SHT30);
   g_bhOk = g_bh.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, i2c_addr::BH1750);
+  if (g_bhOk) {
+    g_bh.configure(BH1750::CONTINUOUS_HIGH_RES_MODE);
+  }
   return g_shtOk || g_bhOk;
 }
 
@@ -68,6 +71,7 @@ void read(const Thresholds& t, SensorReading& out, Fault& sensorFault, uint32_t 
   }
 
   // --- BH1750 ---
+  // Re-read light level directly
   float lux = g_bhOk ? g_bh.readLightLevel() : -1.0f;
   if (lux >= 0) {
     out.lux = lux; out.lux_valid = true; g_bhFails = 0;
