@@ -24,7 +24,9 @@ enum class Fault : uint8_t {
 const char* faultCode(Fault f);      // string kode, mis. "PUMP_NO_EFFECT"
 const char* faultMessage(Fault f);   // pesan Bahasa Indonesia untuk petani
 
-enum class ActuatorKey : uint8_t { GROWLIGHT = 0, PUMP, MIST, FAN, COUNT };
+enum class ActuatorKey : uint8_t {
+  GROWLIGHT = 0, PUMP, MIST, FAN, MIST_2, FAN_2, COUNT
+};
 enum class Mode : uint8_t { AUTO = 0, MANUAL };
 
 // Alasan aktuator ON/OFF, dipetakan ke field `reason` di Firestore.
@@ -60,8 +62,8 @@ struct Thresholds {
   float max_light_hours_per_day = 14;  // batas DLI kasar untuk stroberi
 
   // Kalibrasi soil (raw ADC), disimpan per unit.
-  uint16_t soil_adc_dry = 3500;
-  uint16_t soil_adc_wet = 1700;
+  uint16_t soil_adc_dry = 3500;   // 3500 ADC = 0% (kering)
+  uint16_t soil_adc_wet = 1000;   // 1000 ADC = 100% (air)
 };
 
 struct SensorReading {

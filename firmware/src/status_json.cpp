@@ -9,6 +9,8 @@ const char* actName(ActuatorKey k) {
     case ActuatorKey::PUMP: return "pump";
     case ActuatorKey::MIST: return "mist";
     case ActuatorKey::FAN: return "fan";
+    case ActuatorKey::MIST_2: return "mist_2";
+    case ActuatorKey::FAN_2: return "fan_2";
     default: return "unknown";
   }
 }
@@ -35,11 +37,12 @@ size_t buildStatus(char* buf, size_t cap,
     s.temperature_c, s.humidity_pct, s.lux, s.soil_pct, s.soil_raw_adc, s.psu_voltage);
   if (n < 0 || (size_t)n >= cap) return 0;
 
-  ActuatorKey order[4] = {ActuatorKey::GROWLIGHT, ActuatorKey::PUMP,
-                          ActuatorKey::MIST, ActuatorKey::FAN};
-  for (int i = 0; i < 4; i++) {
+  ActuatorKey order[6] = {ActuatorKey::GROWLIGHT, ActuatorKey::PUMP,
+                          ActuatorKey::MIST, ActuatorKey::FAN,
+                          ActuatorKey::MIST_2, ActuatorKey::FAN_2};
+  for (int i = 0; i < 6; i++) {
     n += writeActuator(buf + n, cap - n, order[i]);
-    if (i < 3) n += snprintf(buf + n, cap - n, ",");
+    if (i < 5) n += snprintf(buf + n, cap - n, ",");
     if ((size_t)n >= cap) return 0;
   }
 

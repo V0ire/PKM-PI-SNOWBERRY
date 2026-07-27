@@ -50,7 +50,11 @@ void logStatus(uint32_t nowMs) {
 
 // Kalibrasi soil via tombol: tekan saat kering -> lepas -> tekan saat basah.
 void runSoilCalibration() {
-  Serial.println(">> Kalibrasi soil: pastikan sensor di media KERING, tekan tombol lagi...");
+  const uint32_t now = millis();
+  for (uint8_t i = 0; i < static_cast<uint8_t>(ActuatorKey::COUNT); ++i) {
+    actuators::forceOff(static_cast<ActuatorKey>(i), now);
+  }
+  Serial.println(">> Kalibrasi: semua aktuator OFF.");
   while (digitalRead(pins::BUTTON) == LOW) delay(10);  // tunggu lepas
   while (digitalRead(pins::BUTTON) == HIGH) delay(10); // tunggu tekan (kering)
   delay(50);

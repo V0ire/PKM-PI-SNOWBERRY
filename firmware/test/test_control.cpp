@@ -41,32 +41,32 @@ int main() {
   Thresholds uncal=t; uncal.soil_adc_dry=0;
   CHECK(!control::soilPercent(uncal,2000,pct), "soil belum kalibrasi ditolak");
 
-  // 3) FAN: RH tinggi -> fan ON, mist OFF
+  // 3) FAN & MIST: Humidifier RH-only (Rev B)
   actuators::initSafeState();
   SensorReading s=mkSensor(); s.humidity_pct=90; // > rh_high(85)
   control::step(t,s,noCmd,tsync,1000000,f);
-  CHECK(actuators::isOn(AK::FAN), "RH tinggi -> FAN ON");
+  CHECK(!actuators::isOn(AK::FAN), "RH tinggi -> Humidifier OFF");
   CHECK(!actuators::isOn(AK::MIST), "RH tinggi -> MIST OFF");
 
-  // 4) FAN: suhu tinggi -> fan ON
+  // 4) Suhu tinggi tidak memicu humidifier di Rev B (RH-only)
   actuators::initSafeState();
   s=mkSensor(); s.temperature_c=30; // > temp_high(28)
   control::step(t,s,noCmd,tsync,2000000,f);
-  CHECK(actuators::isOn(AK::FAN), "suhu tinggi -> FAN ON");
+  CHECK(!actuators::isOn(AK::FAN), "suhu tinggi -> Humidifier tetap OFF (RH-only)");
 
-  // 5) Konflik: RH rendah + suhu tinggi -> fan menang, mist ditahan
+  // 5) Kering (RH 60% <= rh_low 65%) -> 4 pin humidifier ON
   actuators::initSafeState();
   s=mkSensor(); s.humidity_pct=60; s.temperature_c=30; // kering & panas
   control::step(t,s,noCmd,tsync,3000000,f);
-  CHECK(actuators::isOn(AK::FAN), "kering+panas -> FAN ON");
-  CHECK(!actuators::isOn(AK::MIST), "kering+panas -> MIST ditahan (tidak melawan)");
+  CHECK(actuators::isOn(AK::FAN), "kering -> FAN ON");
+  CHECK(actuators::isOn(AK::MIST), "kering -> MIST ON");
 
-  // 6) MIST: kering + suhu normal -> mist ON
+  // 6) MIST: kering + suhu normal -> 4 pin humidifier ON
   actuators::initSafeState();
   s=mkSensor(); s.humidity_pct=60; s.temperature_c=22;
   control::step(t,s,noCmd,tsync,4000000,f);
   CHECK(actuators::isOn(AK::MIST), "kering+suhu normal -> MIST ON");
-  CHECK(!actuators::isOn(AK::FAN), "kering+suhu normal -> FAN OFF");
+  CHECK(actuators::isOn(AK::FAN), "kering+suhu normal -> FAN ON");
 
   // 7) Soil invalid -> pump OFF (safety)
   actuators::initSafeState();

@@ -32,8 +32,10 @@ struct LightState {
   uint32_t lastOnMark = 0;
 } g_light;
 
-Reason g_reason[4] = {Reason::SAFETY_OFF, Reason::SAFETY_OFF,
-                      Reason::SAFETY_OFF, Reason::SAFETY_OFF};
+Reason g_reason[static_cast<int>(AK::COUNT)] = {
+  Reason::SAFETY_OFF, Reason::SAFETY_OFF, Reason::SAFETY_OFF,
+  Reason::SAFETY_OFF, Reason::SAFETY_OFF, Reason::SAFETY_OFF
+};
 
 void setReason(AK k, Reason r) { g_reason[static_cast<int>(k)] = r; }
 
@@ -46,6 +48,20 @@ void drive(AK k, bool wantOn, Reason r, uint32_t nowMs) {
 void safetyOff(AK k, uint32_t nowMs, Reason r) {
   actuators::forceOff(k, nowMs);
   setReason(k, r);
+}
+
+void driveHumidifier(bool wantOn, Reason r, uint32_t nowMs) {
+  drive(AK::MIST, wantOn, r, nowMs);
+  drive(AK::FAN, wantOn, r, nowMs);
+  drive(AK::MIST_2, wantOn, r, nowMs);
+  drive(AK::FAN_2, wantOn, r, nowMs);
+}
+
+void safetyOffHumidifier(uint32_t nowMs, Reason r) {
+  safetyOff(AK::MIST, nowMs, r);
+  safetyOff(AK::FAN, nowMs, r);
+  safetyOff(AK::MIST_2, nowMs, r);
+  safetyOff(AK::FAN_2, nowMs, r);
 }
 }  // namespace
 
@@ -79,46 +95,23 @@ bool soilPercent(const Thresholds& t, uint16_t rawAdc, float& outPct) {
 
 // ---- Fan + Mist dengan resolusi konflik ---------------------------------
 static void controlFanMist(const Thresholds& t, const SensorReading& s, uint32_t nowMs) {
-  const bool tempValid = s.temp_valid;
-  const bool rhValid = s.rh_valid;
-
-  if (!tempValid && !rhValid) {
-    safetyOff(AK::FAN, nowMs, Reason::SENSOR_INVALID);
-    safetyOff(AK::MIST, nowMs, Reason::SENSOR_INVALID);
+  if (!s.rh_valid) {
+    safetyOffHumidifier(nowMs, Reason::SENSOR_INVALID);
     g_fm = {};
     return;
   }
-
-  const bool tooHot = tempValid && s.temperature_c >= t.temp_high;
-  const bool tooHumid = rhValid && s.humidity_pct >= t.rh_high;
-  const bool tooDry = rhValid && s.humidity_pct <= t.rh_low;
-
-  // --- FAN & MIST: Nyala bersamaan jika panas ATAU kering berlebih ---
-  const bool tempBelowFanOff = !tempValid || s.temperature_c <= t.temp_high - 0.5f;
-  const bool rhAboveDryOff = !rhValid || s.humidity_pct >= t.rh_low + 2.0f;
-  const bool rhBelowHumidOff = !rhValid || s.humidity_pct <= t.rh_high - 2.0f;
-
   bool wantOn = g_fm.fanLatched || g_fm.mistLatched;
-  Reason reason = Reason::TEMP_RH_OK;
-
-  if (tooHot || tooDry) {
+  Reason reason = wantOn ? Reason::HUMIDITY_LOW : Reason::HUMIDITY_OK;
+  if (s.humidity_pct <= t.rh_low) {
     wantOn = true;
-    reason = tooHot ? Reason::TEMP_HIGH : Reason::HUMIDITY_LOW;
-  } else if (tooHumid) {
-    // Kelembapan sangat tinggi: nyalakan kipas saja untuk sirkulasi, matikan kabut
-    g_fm.fanLatched = true;
-    g_fm.mistLatched = false;
-    drive(AK::FAN, true, Reason::HUMIDITY_HIGH, nowMs);
-    drive(AK::MIST, false, Reason::HUMIDITY_HIGH, nowMs);
-    return;
-  } else if (tempBelowFanOff && rhAboveDryOff && rhBelowHumidOff) {
+    reason = Reason::HUMIDITY_LOW;
+  } else if (s.humidity_pct >= t.rh_high) {
     wantOn = false;
+    reason = Reason::HUMIDITY_HIGH;
   }
-
   g_fm.fanLatched = wantOn;
   g_fm.mistLatched = wantOn;
-  drive(AK::FAN, wantOn, reason, nowMs);
-  drive(AK::MIST, wantOn, reason, nowMs);
+  driveHumidifier(wantOn, reason, nowMs);
 }
 
 // ---- Pump pulse/soak + proteksi ------------------------------------------
@@ -229,8 +222,7 @@ static void controlGrowlight(const Thresholds& t, const SensorReading& s,
   if (time.synced) {
     inWindow = (time.hour >= t.light_window_start && time.hour < t.light_window_end);
   } else {
-    // TIME_NOT_SYNCED: mode konservatif — hanya izinkan jika sangat gelap,
-    // dan tetap hormati batas harian. Tidak "hari panjang" tak sengaja.
+    // TIME_NOT_SYNCED: tanpa NTP, izinkan kontrol berdasarkan lux (dengan batas jam harian)
     inWindow = true;
   }
 
@@ -295,7 +287,7 @@ void step(const Thresholds& t, const SensorReading& s, const ManualCommand& cmd,
   auto isManual = [&](AK k) { return manualHandled && manualKey == k; };
 
   // AUTO untuk aktuator yang tidak sedang manual.
-  if (!isManual(AK::FAN) && !isManual(AK::MIST)) {
+  if (!isManual(AK::FAN) && !isManual(AK::MIST) && !isManual(AK::FAN_2) && !isManual(AK::MIST_2)) {
     controlFanMist(t, s, nowMs);
   }
   if (!isManual(AK::PUMP)) {

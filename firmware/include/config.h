@@ -13,11 +13,13 @@ constexpr uint8_t SOIL_ADC = 34;        // ADC1_CH6, input-only
 constexpr uint8_t VOLTAGE_ADC = 35;     // ADC1_CH7, 30k+10k divider di rail 12V
 
 constexpr uint8_t GROWLIGHT = 16;       // SSR ch1, ACTIVE HIGH
-constexpr uint8_t PUMP = 17;            // Relay ch1, ACTIVE LOW
-constexpr uint8_t MIST = 18;            // Relay ch2, ACTIVE LOW (disc 24V)
-constexpr uint8_t FAN = 19;             // Relay 1ch, ACTIVE LOW (fan 12V)
+constexpr uint8_t PUMP = 17;            // Relay pump, ACTIVE HIGH
+constexpr uint8_t MIST = 18;            // Humidifier mist 1, ACTIVE HIGH
+constexpr uint8_t FAN = 19;             // Humidifier fan 1, ACTIVE HIGH
+constexpr uint8_t MIST_2 = 23;          // Humidifier mist 2, ACTIVE HIGH
+constexpr uint8_t FAN_2 = 32;           // Humidifier fan 2, ACTIVE HIGH
 constexpr uint8_t SPARE_SSR = 25;       // SSR ch2, ACTIVE HIGH, tanpa beban
-constexpr uint8_t BUTTON = 4;           // INPUT_PULLUP, tekan = LOW
+constexpr uint8_t BUTTON = 33;          // INPUT_PULLUP, tekan = LOW
 }  // namespace pins
 
 // ---------------------------------------------------------------------------
@@ -26,8 +28,10 @@ constexpr uint8_t BUTTON = 4;           // INPUT_PULLUP, tekan = LOW
 namespace polarity {
 constexpr uint8_t SSR_ON = 1;      // active HIGH
 constexpr uint8_t SSR_OFF = 0;
-constexpr uint8_t RELAY_ON = 0;    // active LOW
-constexpr uint8_t RELAY_OFF = 1;
+constexpr uint8_t RELAY_ON = 1;    // Rev B active HIGH
+constexpr uint8_t RELAY_OFF = 0;
+static_assert(SSR_OFF == 0 && RELAY_OFF == 0,
+              "Rev B boot contract: semua OFF-level harus LOW");
 }  // namespace polarity
 
 // ---------------------------------------------------------------------------

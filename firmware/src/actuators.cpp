@@ -14,11 +14,13 @@ struct Chan {
 };
 
 // Urut sesuai enum ActuatorKey: GROWLIGHT, PUMP, MIST, FAN.
-Chan g_chan[4] = {
+Chan g_chan[static_cast<int>(ActuatorKey::COUNT)] = {
   {pins::GROWLIGHT, polarity::SSR_ON,   polarity::SSR_OFF,   5000,   5000,   false, 0},
   {pins::PUMP,      polarity::RELAY_ON, polarity::RELAY_OFF, 0,      0,      false, 0},
   {pins::MIST,      polarity::RELAY_ON, polarity::RELAY_OFF, 5000,   30000,  false, 0},
   {pins::FAN,       polarity::RELAY_ON, polarity::RELAY_OFF, 30000,  30000,  false, 0},
+  {pins::MIST_2,    polarity::RELAY_ON, polarity::RELAY_OFF, 5000,   30000,  false, 0},
+  {pins::FAN_2,     polarity::RELAY_ON, polarity::RELAY_OFF, 30000,  30000,  false, 0},
 };
 
 Chan& ch(ActuatorKey k) { return g_chan[static_cast<int>(k)]; }
@@ -57,10 +59,10 @@ bool apply(ActuatorKey key, bool wantOn, uint32_t nowMs) {
 
 void forceOff(ActuatorKey key, uint32_t nowMs) {
   Chan& c = ch(key);
+  digitalWrite(c.pin, c.offLevel);
   if (!c.on) return;
   c.on = false;
   c.lastChanged = nowMs;
-  digitalWrite(c.pin, c.offLevel);
 }
 
 bool isOn(ActuatorKey key) { return ch(key).on; }

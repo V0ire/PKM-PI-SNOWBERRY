@@ -100,11 +100,9 @@ void read(const Thresholds& t, SensorReading& out, Fault& sensorFault, uint32_t 
     }
   }
 
-  // --- PSU 12V rail ---
-  out.psu_voltage = readPsuVoltage();
-  out.psu_valid = true;
-  if (out.psu_voltage < psu::RAIL_LOW_V && sensorFault == Fault::NONE)
-    sensorFault = Fault::PSU_VOLTAGE_LOW;
+  // GPIO35 tidak dipakai di Rev B.
+  out.psu_voltage = 0;
+  out.psu_valid = false;
 }
 
 }  // namespace sensors
