@@ -1,4 +1,4 @@
-import type { GreenhouseProfile, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
+import type { ActuatorKey, GreenhouseProfile, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
 import type { ManualCommand, SnowberryDataSource } from "./dataSource";
 import type { FirebaseEnv } from "./firebaseConfig";
 import { initializeApp } from "firebase/app";
@@ -14,6 +14,55 @@ function todayDocId(): string {
   const d = new Date();
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 10);
+}
+
+function normalizeStatus(data: Partial<RealtimeStatus>): RealtimeStatus {
+  const actuator = (key: ActuatorKey) => ({
+    mode: data.actuators?.[key]?.mode ?? "AUTO",
+    state: data.actuators?.[key]?.state ?? false,
+    manual_until: data.actuators?.[key]?.manual_until ?? null,
+    reason: data.actuators?.[key]?.reason,
+  });
+
+  return {
+    sensors: {
+      temperature_c: data.sensors?.temperature_c ?? null,
+      humidity_pct: data.sensors?.humidity_pct ?? null,
+      lux: data.sensors?.lux ?? null,
+      soil_pct: data.sensors?.soil_pct ?? null,
+      soil_raw_adc: data.sensors?.soil_raw_adc ?? null,
+      psu_voltage: data.sensors?.psu_voltage ?? null,
+    },
+    actuators: {
+      growlight: actuator("growlight"),
+      pump: actuator("pump"),
+      mist: actuator("mist"),
+      fan: actuator("fan"),
+    },
+    device: {
+      online: data.device?.online ?? false,
+      wifi_rssi: data.device?.wifi_rssi ?? 0,
+      firmware_version: data.device?.firmware_version ?? "",
+      ip_address: data.device?.ip_address,
+      uptime_seconds: data.device?.uptime_seconds ?? 0,
+      free_heap_bytes: data.device?.free_heap_bytes,
+      nvs_synced: data.device?.nvs_synced ?? false,
+      time_synced: data.device?.time_synced,
+    },
+    command_ack: {
+      ack_command_id: data.command_ack?.ack_command_id ?? "",
+      ack_status: data.command_ack?.ack_status ?? "",
+      ack_at: data.command_ack?.ack_at ?? null,
+      ack_message: data.command_ack?.ack_message ?? "",
+    },
+    fault: {
+      active_code: data.fault?.active_code ?? null,
+      active_message: data.fault?.active_message ?? null,
+      last_fault_code: data.fault?.last_fault_code ?? null,
+      last_fault_at: data.fault?.last_fault_at ?? null,
+    },
+    last_seen: typeof data.last_seen === "number" ? data.last_seen : 0,
+  };
 }
 
 export async function createFirebaseDataSource(env: FirebaseEnv): Promise<SnowberryDataSource> {
@@ -38,7 +87,7 @@ export async function createFirebaseDataSource(env: FirebaseEnv): Promise<Snowbe
     kind: "firebase",
     subscribeStatus(cb: (s: RealtimeStatus) => void) {
       return onSnapshot(statusRef, (snap) => {
-        if (snap.exists()) cb(snap.data() as RealtimeStatus);
+        if (snap.exists()) cb(normalizeStatus(snap.data() as Partial<RealtimeStatus>));
       });
     },
     subscribeThresholds(cb: (t: ThresholdConfig) => void) {

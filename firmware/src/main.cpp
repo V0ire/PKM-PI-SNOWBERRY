@@ -14,9 +14,13 @@
 #include "actuators.h"
 #include "config.h"
 #include "control.h"
+#ifdef SNOWBERRY_MEASUREMENT_MODE
+#include "measurement_server.h"
+#endif
 #include "sensors.h"
 #include "storage.h"
 #include "types.h"
+#include "firebase_sync.h"
 
 namespace {
 Thresholds g_thresholds;
@@ -28,6 +32,8 @@ Fault g_activeFault = Fault::NONE;
 uint32_t g_lastSensor = 0;
 uint32_t g_lastControl = 0;
 uint32_t g_lastReport = 0;
+bool g_pendingCommandAck = false;
+char g_pendingCommandId[64] = "";
 
 void logStatus(uint32_t nowMs) {
   Serial.printf("[%lus] T=%.1f RH=%.1f Lux=%.0f Soil=%.1f(%u) PSU=%.2f | ",
@@ -86,11 +92,24 @@ void setup() {
   // 2) Muat threshold dari NVS. Jika gagal, pakai default + fault.
   if (!storage::begin() || !storage::loadThresholds(g_thresholds)) {
     g_thresholds = Thresholds{};  // default aman Ciwidey
+    g_thresholds.soil_adc_dry = 3500;
+    g_thresholds.soil_adc_wet = 1700;
     g_activeFault = Fault::NVS_ERROR;
     Serial.println("[boot] NVS kosong/korupsi -> pakai default. Pump AUTO nonaktif sampai kalibrasi.");
   } else {
     Serial.println("[boot] Threshold dimuat dari NVS.");
   }
+
+  // Temporary breadboard calibration; replace through the calibration flow.
+  if (g_thresholds.soil_adc_dry == 0 || g_thresholds.soil_adc_wet == 0) {
+    g_thresholds.soil_adc_dry = 3500;
+    g_thresholds.soil_adc_wet = 1700;
+    Serial.println("[boot] Kalibrasi soil demo: basah=1700, kering=3500.");
+  }
+  g_thresholds.soil_adc_dry = 3500;
+  g_thresholds.soil_adc_wet = 1700;
+  g_thresholds.pump_pulse_ms = 5000;
+  storage::saveThresholds(g_thresholds);
 
   // 3) Sensor terakhir (setelah safe-state aktif).
   if (!sensors::begin()) {
@@ -104,7 +123,14 @@ void setup() {
   }
 
   g_time.synced = false;  // NTP menyusul di tahap Firebase.
+  fbsync::Config cfg;
+  fbsync::begin(cfg);
+#ifdef SNOWBERRY_MEASUREMENT_MODE
+  Serial.println("[boot] Masuk mode pengukuran: aktuator tetap OFF, API lokal aktif.");
+  measurement::begin(&g_sensor);
+#else
   Serial.println("[boot] Masuk loop kontrol lokal.\n");
+#endif
 }
 
 void loop() {
@@ -118,21 +144,49 @@ void loop() {
     else if (g_activeFault != Fault::NVS_ERROR) g_activeFault = Fault::NONE;
   }
 
+#ifdef SNOWBERRY_MEASUREMENT_MODE
+  measurement::loop();
+#else
+  fbsync::loop(now);
+  g_time.synced = fbsync::timeSynced(g_time.epoch_ms, g_time.hour);
+  char cmdId[64] = "";
+  if (fbsync::pollCommand(g_manual, cmdId, sizeof(cmdId))) {
+    strncpy(g_pendingCommandId, cmdId, sizeof(g_pendingCommandId) - 1);
+    g_pendingCommandId[sizeof(g_pendingCommandId) - 1] = '\0';
+    g_pendingCommandAck = true;
+  }
+
   if (now - g_lastControl >= timing::CONTROL_INTERVAL_MS) {
     g_lastControl = now;
     Fault controlFault = Fault::NONE;
     control::step(g_thresholds, g_sensor, g_manual, g_time, now, controlFault);
+    if (g_pendingCommandAck) {
+      const bool rejectedSafety = controlFault == Fault::COMMAND_REJECTED_SAFETY;
+      const bool expired = controlFault == Fault::COMMAND_EXPIRED;
+      fbsync::publishAck(
+        g_pendingCommandId,
+        rejectedSafety ? "REJECTED_SAFETY" : expired ? "EXPIRED" : "APPLIED",
+        rejectedSafety ? "Perintah pompa ditolak karena sensor media belum dikalibrasi." :
+          expired ? "Perintah manual sudah kedaluwarsa." :
+          g_manual.mode == Mode::AUTO ? "Alat kembali otomatis." : "Perintah manual diterapkan.");
+      if (rejectedSafety || expired) g_manual.valid = false;
+      g_pendingCommandAck = false;
+    }
     if (controlFault != Fault::NONE) g_activeFault = controlFault;
   }
+#endif
 
   if (now - g_lastReport >= 5000) {
     g_lastReport = now;
     logStatus(now);
+    fbsync::updateLiveSensors(g_sensor, g_activeFault, now);
   }
 
+#ifndef SNOWBERRY_MEASUREMENT_MODE
   // Tombol saat runtime -> masuk mode kalibrasi.
   if (digitalRead(pins::BUTTON) == LOW) {
     delay(50);
     if (digitalRead(pins::BUTTON) == LOW) runSoilCalibration();
   }
+#endif
 }

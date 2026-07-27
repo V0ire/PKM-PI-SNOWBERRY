@@ -23,7 +23,11 @@ export type SnowberryData = {
 export function useSnowberryData(): SnowberryData {
   const [source, setSource] = useState<DataSourceKind>("mock");
   const [statusReady, setStatusReady] = useState(false);
-  const [status, setStatus] = useState<RealtimeStatus>(INITIAL_STATUS);
+  const [status, setStatus] = useState<RealtimeStatus>({
+    ...INITIAL_STATUS,
+    device: { ...INITIAL_STATUS.device, online: false },
+    last_seen: 0,
+  });
   const [thresholds, setThresholds] = useState<ThresholdConfig>(DEFAULT_THRESHOLDS);
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>(HISTORY_POINTS);
   const [profile, setProfile] = useState<GreenhouseProfile | null>(null);

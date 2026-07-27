@@ -90,50 +90,35 @@ static void controlFanMist(const Thresholds& t, const SensorReading& s, uint32_t
   }
 
   const bool tooHot = tempValid && s.temperature_c >= t.temp_high;
-  (void)0;  // coolEnough tidak lagi dipakai untuk fan-off
   const bool tooHumid = rhValid && s.humidity_pct >= t.rh_high;
   const bool tooDry = rhValid && s.humidity_pct <= t.rh_low;
 
-  // --- FAN: ON jika panas ATAU lembap berlebih; hysteresis via latch. ---
-  // Nyala saat melewati ambang atas; mati saat sudah turun di bawah ambang
-  // atas dikurangi histeresis (bukan menunggu sampai temp_low/rh_low).
+  // --- FAN & MIST: Nyala bersamaan jika panas ATAU kering berlebih ---
   const bool tempBelowFanOff = !tempValid || s.temperature_c <= t.temp_high - 0.5f;
-  const bool rhBelowFanOff = !rhValid || s.humidity_pct <= t.rh_high - 2.0f;
-  bool fanWant = g_fm.fanLatched;
-  if (tooHot || tooHumid) fanWant = true;
-  else if (tempBelowFanOff && rhBelowFanOff) fanWant = false;
+  const bool rhAboveDryOff = !rhValid || s.humidity_pct >= t.rh_low + 2.0f;
+  const bool rhBelowHumidOff = !rhValid || s.humidity_pct <= t.rh_high - 2.0f;
 
-  // --- MIST: ON jika terlalu kering. ---
-  bool mistWant = g_fm.mistLatched;
-  if (tooDry && rhValid) mistWant = true;
-  else if (!rhValid || s.humidity_pct >= t.rh_low + 2.0f || tooHumid) mistWant = false;
+  bool wantOn = g_fm.fanLatched || g_fm.mistLatched;
+  Reason reason = Reason::TEMP_RH_OK;
 
-  // --- Resolusi konflik fan vs mist ---
-  Reason fanReason = Reason::TEMP_RH_OK;
-  Reason mistReason = Reason::HUMIDITY_OK;
-
-  if (tooHumid) {
-    // RH tinggi: buang lembap. Mist mati, fan menyala.
-    mistWant = false;
-    fanWant = true;
-    fanReason = Reason::HUMIDITY_HIGH;
-    mistReason = Reason::HUMIDITY_HIGH;
-  } else if (mistWant && tooHot) {
-    // RH rendah TAPI suhu tinggi: suhu prioritas. Fan menang, mist ditahan
-    // agar tidak saling melawan (fan mempercepat penguapan).
-    mistWant = false;
-    fanWant = true;
-    fanReason = Reason::TEMP_HIGH;
-    mistReason = Reason::TEMP_HIGH;
-  } else {
-    if (fanWant) fanReason = tooHot ? Reason::TEMP_HIGH : Reason::HUMIDITY_HIGH;
-    if (mistWant) mistReason = Reason::HUMIDITY_LOW;
+  if (tooHot || tooDry) {
+    wantOn = true;
+    reason = tooHot ? Reason::TEMP_HIGH : Reason::HUMIDITY_LOW;
+  } else if (tooHumid) {
+    // Kelembapan sangat tinggi: nyalakan kipas saja untuk sirkulasi, matikan kabut
+    g_fm.fanLatched = true;
+    g_fm.mistLatched = false;
+    drive(AK::FAN, true, Reason::HUMIDITY_HIGH, nowMs);
+    drive(AK::MIST, false, Reason::HUMIDITY_HIGH, nowMs);
+    return;
+  } else if (tempBelowFanOff && rhAboveDryOff && rhBelowHumidOff) {
+    wantOn = false;
   }
 
-  g_fm.fanLatched = fanWant;
-  g_fm.mistLatched = mistWant;
-  drive(AK::FAN, fanWant, fanReason, nowMs);
-  drive(AK::MIST, mistWant, mistReason, nowMs);
+  g_fm.fanLatched = wantOn;
+  g_fm.mistLatched = wantOn;
+  drive(AK::FAN, wantOn, reason, nowMs);
+  drive(AK::MIST, wantOn, reason, nowMs);
 }
 
 // ---- Pump pulse/soak + proteksi ------------------------------------------

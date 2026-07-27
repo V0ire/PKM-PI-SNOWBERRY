@@ -51,7 +51,7 @@ struct Thresholds {
   float soil_high = 70.0f;
   float lux_low = 2000.0f;
   float lux_high = 5000.0f;
-  uint32_t pump_pulse_ms = 3000;
+  uint32_t pump_pulse_ms = 5000;
   uint32_t soak_period_ms = 30000;
   uint16_t max_pump_cycles_per_hour = 6;
   uint32_t max_total_pump_on_ms_per_hour = 30000;
@@ -60,8 +60,8 @@ struct Thresholds {
   float max_light_hours_per_day = 14;  // batas DLI kasar untuk stroberi
 
   // Kalibrasi soil (raw ADC), disimpan per unit.
-  uint16_t soil_adc_dry = 0;   // 0 = belum dikalibrasi
-  uint16_t soil_adc_wet = 0;
+  uint16_t soil_adc_dry = 3500;
+  uint16_t soil_adc_wet = 1700;
 };
 
 struct SensorReading {

@@ -15,7 +15,7 @@ struct Chan {
 
 // Urut sesuai enum ActuatorKey: GROWLIGHT, PUMP, MIST, FAN.
 Chan g_chan[4] = {
-  {pins::GROWLIGHT, polarity::SSR_ON,   polarity::SSR_OFF,   300000, 300000, false, 0},
+  {pins::GROWLIGHT, polarity::SSR_ON,   polarity::SSR_OFF,   5000,   5000,   false, 0},
   {pins::PUMP,      polarity::RELAY_ON, polarity::RELAY_OFF, 0,      0,      false, 0},
   {pins::MIST,      polarity::RELAY_ON, polarity::RELAY_OFF, 5000,   30000,  false, 0},
   {pins::FAN,       polarity::RELAY_ON, polarity::RELAY_OFF, 30000,  30000,  false, 0},
@@ -36,7 +36,8 @@ void initSafeState() {
     digitalWrite(c.pin, c.offLevel);
     pinMode(c.pin, OUTPUT);
     c.on = false;
-    c.lastChanged = millis();
+    // Safe at boot, but allow the first valid automatic decision immediately.
+    c.lastChanged = millis() - c.minOff;
   }
 }
 

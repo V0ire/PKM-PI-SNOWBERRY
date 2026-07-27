@@ -1,4 +1,5 @@
 #pragma once
+#include <stddef.h>
 #include "control.h"
 #include "types.h"
 
@@ -48,5 +49,8 @@ void publishAck(const char* commandId, const char* ackStatus, const char* ackMes
 
 // Tambah 1 sample telemetry (buffer RAM, flush per interval).
 void appendTelemetry(const char* sampleJson, uint32_t nowMs);
+
+// Tulis langsung sensor ke status/realtime untuk demo.
+void updateLiveSensors(const SensorReading& s, Fault fault, uint32_t nowMs);
 
 }  // namespace fbsync

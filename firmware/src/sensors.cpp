@@ -8,7 +8,7 @@
 
 namespace {
 Adafruit_SHT31 g_sht;
-BH1750 g_bh(i2c_addr::BH1750);
+BH1750 g_bh;
 bool g_shtOk = false;
 bool g_bhOk = false;
 uint8_t g_shtFails = 0;
@@ -29,6 +29,7 @@ namespace sensors {
 bool begin() {
   Wire.begin(pins::I2C_SDA, pins::I2C_SCL);
   Wire.setClock(100000);
+  delay(100);  // Beri waktu hardware bus stabil
   analogReadResolution(12);
   analogSetPinAttenuation(pins::SOIL_ADC, ADC_11db);
   analogSetPinAttenuation(pins::VOLTAGE_ADC, ADC_11db);

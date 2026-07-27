@@ -1,4 +1,4 @@
-const CACHE_NAME = "snowberry-app-v1";
+const CACHE_NAME = "snowberry-app-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/snowberry-icon.svg", "/snowberry-mark.svg"];
 
 self.addEventListener("install", (event) => {
