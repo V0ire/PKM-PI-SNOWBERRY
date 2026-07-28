@@ -40,11 +40,13 @@ void logStatus(uint32_t nowMs) {
                 nowMs / 1000,
                 g_sensor.temperature_c, g_sensor.humidity_pct, g_sensor.lux,
                 g_sensor.soil_pct, g_sensor.soil_raw_adc, g_sensor.psu_voltage);
-  Serial.printf("GL=%d P=%d M=%d F=%d | fault=%s\n",
+  Serial.printf("GL=%d P=%d M1=%d F1=%d M2=%d F2=%d | fault=%s\n",
                 actuators::isOn(ActuatorKey::GROWLIGHT),
                 actuators::isOn(ActuatorKey::PUMP),
                 actuators::isOn(ActuatorKey::MIST),
                 actuators::isOn(ActuatorKey::FAN),
+                actuators::isOn(ActuatorKey::MIST_2),
+                actuators::isOn(ActuatorKey::FAN_2),
                 faultCode(g_activeFault));
 }
 
