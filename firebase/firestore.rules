@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function deviceAccount(deviceId) {
+      return signedIn() && profile().role == 'device' && profile().deviceId == deviceId;
+    }
+    function farmerOwns(deviceId) {
+      return signedIn() && profile().role == 'farmer' && deviceId in profile().devices;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /devices/{deviceId}/status/{document} {
+      allow read: if farmerOwns(deviceId);
+      allow write: if deviceAccount(deviceId);
+    }
+    match /devices/{deviceId}/telemetry/{document} {
+      allow read: if farmerOwns(deviceId);
+      allow write: if deviceAccount(deviceId);
+    }
+    match /devices/{deviceId}/config/{document} {
+      allow read: if deviceAccount(deviceId) || farmerOwns(deviceId);
+      // Field build remote control is disabled. Config stays immutable until
+      // authenticated command and threshold schema tests are deployed.
+      allow write: if false;
+    }
+    match /devices/{deviceId} {
+      allow read: if farmerOwns(deviceId) || deviceAccount(deviceId);
+      allow write: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
