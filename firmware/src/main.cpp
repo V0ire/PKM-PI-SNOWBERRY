@@ -21,6 +21,7 @@
 #include "storage.h"
 #include "types.h"
 #include "firebase_sync.h"
+#include <esp_system.h>
 
 namespace {
 Thresholds g_thresholds;
@@ -32,6 +33,10 @@ Fault g_activeFault = Fault::NONE;
 uint32_t g_lastSensor = 0;
 uint32_t g_lastControl = 0;
 uint32_t g_lastReport = 0;
+uint32_t g_lastHeartbeat = 0;
+uint32_t g_maxLoopUs = 0;
+uint32_t g_minHeap = UINT32_MAX;
+uint32_t g_bootCount = 0;
 bool g_pendingCommandAck = false;
 char g_pendingCommandId[64] = "";
 
@@ -40,14 +45,25 @@ void logStatus(uint32_t nowMs) {
                 nowMs / 1000,
                 g_sensor.temperature_c, g_sensor.humidity_pct, g_sensor.lux,
                 g_sensor.soil_pct, g_sensor.soil_raw_adc, g_sensor.psu_voltage);
-  Serial.printf("GL=%d P=%d M1=%d F1=%d M2=%d F2=%d | fault=%s\n",
+  Serial.printf("GL=%d P=%d M=%d F=%d | fault=%s\n",
                 actuators::isOn(ActuatorKey::GROWLIGHT),
                 actuators::isOn(ActuatorKey::PUMP),
                 actuators::isOn(ActuatorKey::MIST),
                 actuators::isOn(ActuatorKey::FAN),
-                actuators::isOn(ActuatorKey::MIST_2),
-                actuators::isOn(ActuatorKey::FAN_2),
                 faultCode(g_activeFault));
+  const auto d=fbsync::diagnostics();
+  Serial.printf("[diag] reset=%d boot=%lu loop_max_us=%lu heap_min=%lu wifi=%d ntp=%d auth=%d net_ops=%lu net_fail=%lu\n",
+                static_cast<int>(esp_reset_reason()),g_bootCount,g_maxLoopUs,g_minHeap,
+                d.wifi_connected,d.ntp_synced,d.firebase_authenticated,
+                d.network_operations,d.network_failures);
+}
+
+bool waitButton(uint8_t level,uint32_t deadline) {
+  while (digitalRead(pins::BUTTON)==level) {
+    if (static_cast<int32_t>(millis()-deadline)>=0) return false;
+    delay(10);
+  }
+  return true;
 }
 
 // Kalibrasi soil via tombol: tekan saat kering -> lepas -> tekan saat basah.
@@ -57,15 +73,16 @@ void runSoilCalibration() {
     actuators::forceOff(static_cast<ActuatorKey>(i), now);
   }
   Serial.println(">> Kalibrasi: semua aktuator OFF.");
-  while (digitalRead(pins::BUTTON) == LOW) delay(10);  // tunggu lepas
-  while (digitalRead(pins::BUTTON) == HIGH) delay(10); // tunggu tekan (kering)
+  Serial.println(">> Kalibrasi soil: pastikan sensor di media KERING, tekan tombol lagi...");
+  uint32_t deadline=millis()+timing::CALIBRATION_TIMEOUT_MS;
+  if (!waitButton(LOW,deadline) || !waitButton(HIGH,deadline)) return;
   delay(50);
   uint32_t acc = 0;
   for (int i = 0; i < 32; i++) { acc += analogRead(pins::SOIL_ADC); delay(5); }
   uint16_t dry = acc / 32;
   Serial.printf(">> ADC kering = %u. Basahi media, lalu tekan tombol...\n", dry);
-  while (digitalRead(pins::BUTTON) == LOW) delay(10);
-  while (digitalRead(pins::BUTTON) == HIGH) delay(10);
+  deadline=millis()+timing::CALIBRATION_TIMEOUT_MS;
+  if (!waitButton(LOW,deadline) || !waitButton(HIGH,deadline)) return;
   delay(50);
   acc = 0;
   for (int i = 0; i < 32; i++) { acc += analogRead(pins::SOIL_ADC); delay(5); }
@@ -94,53 +111,51 @@ void setup() {
   Serial.println("\n[boot] Semua aktuator OFF (safe-state).");
 
   pinMode(pins::BUTTON, INPUT_PULLUP);
+  pinMode(LED_BUILTIN, OUTPUT);
 
   // 2) Muat threshold dari NVS. Jika gagal, pakai default + fault.
-  if (!storage::begin() || !storage::loadThresholds(g_thresholds)) {
+  const bool nvsReady=storage::begin();
+  if (nvsReady) {
+    g_bootCount=storage::incrementBootCount();
+    control::PumpHistory history;
+    storage::loadPumpHistory(history);  // missing/corrupt history keeps default five-hour lock
+    control::restorePumpHistory(history,millis());
+    control::setPumpHistorySaver(storage::savePumpHistory);
+  }
+  if (!nvsReady || !storage::loadThresholds(g_thresholds)) {
     g_thresholds = Thresholds{};  // default aman Ciwidey
-    g_thresholds.soil_adc_dry = 3500;
-    g_thresholds.soil_adc_wet = 1700;
     g_activeFault = Fault::NVS_ERROR;
     Serial.println("[boot] NVS kosong/korupsi -> pakai default. Pump AUTO nonaktif sampai kalibrasi.");
   } else {
     Serial.println("[boot] Threshold dimuat dari NVS.");
   }
 
-  // Temporary breadboard calibration; replace through the calibration flow.
-  if (g_thresholds.soil_adc_dry == 0 || g_thresholds.soil_adc_wet == 0) {
-    g_thresholds.soil_adc_dry = 3500;
-    g_thresholds.soil_adc_wet = 1700;
-    Serial.println("[boot] Kalibrasi soil demo: basah=1700, kering=3500.");
-  }
-  g_thresholds.soil_adc_dry = 3500;
-  g_thresholds.soil_adc_wet = 1700;
-  g_thresholds.pump_pulse_ms = 5000;
-  storage::saveThresholds(g_thresholds);
 
   // 3) Sensor terakhir (setelah safe-state aktif).
   if (!sensors::begin()) {
     Serial.println("[boot] Peringatan: sensor I2C tidak terdeteksi.");
   }
 
-  // Kalibrasi opsional saat boot jika tombol ditahan.
-  if (digitalRead(pins::BUTTON) == LOW) {
-    delay(1500);
-    if (digitalRead(pins::BUTTON) == LOW) runSoilCalibration();
-  }
-
-  g_time.synced = false;  // NTP menyusul di tahap Firebase.
-  fbsync::Config cfg;
-  fbsync::begin(cfg);
 #ifdef SNOWBERRY_MEASUREMENT_MODE
   Serial.println("[boot] Masuk mode pengukuran: aktuator tetap OFF, API lokal aktif.");
   measurement::begin(&g_sensor);
 #else
+  g_time.synced = false;
+  fbsync::Config cfg;
+  fbsync::begin(cfg);
   Serial.println("[boot] Masuk loop kontrol lokal.\n");
 #endif
 }
 
 void loop() {
+  const uint32_t loopStart=micros();
   const uint32_t now = millis();
+
+#ifndef SNOWBERRY_MEASUREMENT_MODE
+  // Physical safety deadline always runs before Wi-Fi or cloud work.
+  Fault deadlineFault=Fault::NONE;
+  control::step(g_thresholds,g_sensor,g_manual,g_time,now,deadlineFault);
+#endif
 
   if (now - g_lastSensor >= timing::SENSOR_INTERVAL_MS) {
     g_lastSensor = now;
@@ -185,14 +200,19 @@ void loop() {
   if (now - g_lastReport >= 5000) {
     g_lastReport = now;
     logStatus(now);
+#ifndef SNOWBERRY_MEASUREMENT_MODE
     fbsync::updateLiveSensors(g_sensor, g_activeFault, now);
+#endif
   }
 
-#ifndef SNOWBERRY_MEASUREMENT_MODE
-  // Tombol saat runtime -> masuk mode kalibrasi.
-  if (digitalRead(pins::BUTTON) == LOW) {
-    delay(50);
-    if (digitalRead(pins::BUTTON) == LOW) runSoilCalibration();
+  if (now-g_lastHeartbeat>=timing::HEARTBEAT_INTERVAL_MS) {
+    g_lastHeartbeat=now;
+    digitalWrite(LED_BUILTIN,!digitalRead(LED_BUILTIN));
   }
-#endif
+
+
+  const uint32_t elapsed=micros()-loopStart;
+  if (elapsed>g_maxLoopUs) g_maxLoopUs=elapsed;
+  const uint32_t heap=ESP.getFreeHeap();
+  if (heap<g_minHeap) g_minHeap=heap;
 }

@@ -3,12 +3,32 @@
 
 namespace control {
 
+struct PumpHistory {
+  uint32_t magic = 0x50484D31;  // PHM1
+  uint16_t version = 1;
+  int64_t starts_epoch_ms[2] = {0, 0};
+  uint8_t count = 0;
+  bool requires_conservative_lock = true;
+  uint32_t checksum = 0;
+};
+
+uint32_t pumpHistoryChecksum(const PumpHistory& history);
+
+using PumpHistorySaver = bool (*)(const PumpHistory&);
+void setPumpHistorySaver(PumpHistorySaver saver);
+void restorePumpHistory(const PumpHistory& history, uint32_t nowMs);
+PumpHistory pumpHistory();
+void resetForTest();
+
 // Validasi threshold. Return true jika aman dipakai/disimpan ke NVS.
 bool validate(const Thresholds& t);
 
 // Konversi raw ADC soil -> persen memakai kalibrasi. Return false jika belum
 // dikalibrasi atau ADC pinned (0/4095) => soil tidak dipercaya.
 bool soilPercent(const Thresholds& t, uint16_t rawAdc, float& outPct);
+
+// Day identifier for Asia/Jakarta (UTC+7), used by daily growlight accounting.
+int32_t jakartaDayId(int64_t epochMs);
 
 // Command manual (overlay). Basis waktu ganda: epoch (NTP) + durasi fallback.
 struct ManualCommand {

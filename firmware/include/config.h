@@ -2,16 +2,13 @@
 #include <stdint.h>
 
 // ============================================================================
-// Snowberry — Pin map (sumber: docs/03-technical/wiring-schematic.md §A.1)
-// Jangan ubah tanpa memperbarui wiring-schematic.md.
+// Snowberry Rev B — sumber: docs/07-finalization/HARDWARE_FIRMWARE_CONTRACT.md
 // ============================================================================
 namespace pins {
 constexpr uint8_t I2C_SDA = 21;
 constexpr uint8_t I2C_SCL = 22;
 
 constexpr uint8_t SOIL_ADC = 34;        // ADC1_CH6, input-only
-constexpr uint8_t VOLTAGE_ADC = 35;     // ADC1_CH7, 30k+10k divider di rail 12V
-
 constexpr uint8_t GROWLIGHT = 16;       // SSR ch1, ACTIVE HIGH
 constexpr uint8_t PUMP = 17;            // Relay pump, ACTIVE HIGH
 constexpr uint8_t MIST = 18;            // Humidifier mist 1, ACTIVE HIGH
@@ -42,17 +39,6 @@ constexpr uint8_t SHT30 = 0x44;
 constexpr uint8_t BH1750 = 0x23;
 }  // namespace i2c_addr
 
-// ---------------------------------------------------------------------------
-// Voltage divider 12V rail: V_adc = V_rail * 10k / 40k (wiring §C.4)
-// adc_raw < ~3100 (12-bit) => rail < 10.0V => PSU low.
-// ---------------------------------------------------------------------------
-namespace psu {
-constexpr float DIVIDER_RATIO = 40.0f / 10.0f;   // V_rail = V_adc * 4
-constexpr float ADC_REF_V = 3.3f;
-constexpr uint16_t ADC_MAX = 4095;
-constexpr float RAIL_LOW_V = 10.0f;              // di bawah ini = fault
-constexpr float RAIL_NOMINAL_V = 12.0f;
-}  // namespace psu
 
 // ---------------------------------------------------------------------------
 // Timing loop (ms)
@@ -63,4 +49,6 @@ constexpr uint32_t SENSOR_INTERVAL_MS = 2000;
 constexpr uint32_t SENSOR_STALE_MS = 15000;       // data lebih tua = invalid
 constexpr uint8_t SENSOR_FAIL_THRESHOLD = 3;      // gagal berturut sebelum fault
 constexpr uint32_t MANUAL_MAX_MS = 30UL * 60UL * 1000UL;  // 30 menit
+constexpr uint32_t CALIBRATION_TIMEOUT_MS = 120000;
+constexpr uint32_t HEARTBEAT_INTERVAL_MS = 1000;
 }  // namespace timing

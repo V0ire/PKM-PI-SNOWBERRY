@@ -28,6 +28,15 @@ struct Config {
   uint32_t threshold_poll_ms = 60000;
 };
 
+struct Diagnostics {
+  bool wifi_connected = false;
+  bool firebase_authenticated = false;
+  bool ntp_synced = false;
+  uint32_t wifi_attempts = 0;
+  uint32_t network_operations = 0;
+  uint32_t network_failures = 0;
+};
+
 void begin(const Config& cfg);
 void loop(uint32_t nowMs);                 // panggil tiap iterasi, non-blocking
 
@@ -52,5 +61,6 @@ void appendTelemetry(const char* sampleJson, uint32_t nowMs);
 
 // Tulis langsung sensor ke status/realtime untuk demo.
 void updateLiveSensors(const SensorReading& s, Fault fault, uint32_t nowMs);
+Diagnostics diagnostics();
 
 }  // namespace fbsync
