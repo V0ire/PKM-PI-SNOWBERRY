@@ -1,5 +1,12 @@
 const CACHE_NAME = "snowberry-app-v2";
-const APP_SHELL = ["/", "/manifest.webmanifest", "/snowberry-icon.svg", "/snowberry-mark.svg"];
+const APP_SHELL = [
+  "/",
+  "/manifest.webmanifest",
+  "/snowberry-icon.svg",
+  "/snowberry-mark.svg",
+  "/snowberry-icon-192.png",
+  "/snowberry-icon-512.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));

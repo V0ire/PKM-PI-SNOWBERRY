@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
-# Uji logika kontrol & builder JSON di host (tanpa hardware ESP32).
-set -e
-cd "$(dirname "$0")/.."
-CXX=${CXX:-g++}
-FLAGS="-std=c++17 -I include -I test/stub -Wall -Wextra"
-echo "== control logic =="
-$CXX $FLAGS test/test_control.cpp src/control.cpp src/types.cpp src/actuators.cpp src/sensor_health.cpp -o /tmp/snowberry_test
-/tmp/snowberry_test
-echo
-echo "== status json =="
-$CXX $FLAGS test/test_json.cpp src/status_json.cpp src/control.cpp src/types.cpp src/actuators.cpp src/sensor_health.cpp -o /tmp/snowberry_json
-/tmp/snowberry_json
-echo
-echo "== sensor health =="
-$CXX $FLAGS test/test_sensor_health.cpp src/sensor_health.cpp -o /tmp/snowberry_sensor_health
-/tmp/snowberry_sensor_health
+set -euo pipefail
+
+echo "========================================="
+echo "  Snowberry configurable source tests    "
+echo "========================================="
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR"
+
+g++ -std=c++17 -I. -I../include \
+  test_configurable.cpp \
+  storage_stub.cpp \
+  ../src/actuators.cpp \
+  ../src/calibration.cpp \
+  ../src/control.cpp \
+  ../src/status_json.cpp \
+  ../src/types.cpp \
+  -o test_configurable
+
+./test_configurable
+rm -f test_configurable
+
+echo "========================================="
+echo "  All production tests completed OK      "
+echo "========================================="

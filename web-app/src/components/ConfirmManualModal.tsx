@@ -1,5 +1,5 @@
 import { Clock } from "lucide-react";
-import type { ActuatorKey } from "../types";
+import type { CommandActuator } from "../types";
 import { ACTUATOR_COPY } from "../data/mockSnowberry";
 
 export function ConfirmManualModal({
@@ -7,7 +7,7 @@ export function ConfirmManualModal({
   onCancel,
   onConfirm,
 }: {
-  actuatorKey: ActuatorKey;
+  actuatorKey: CommandActuator;
   onCancel: () => void;
   onConfirm: () => void;
 }) {

@@ -1,8 +1,10 @@
-import { ChevronLeft, ChevronRight, Droplets, Leaf, Power, Sprout, Sun, Thermometer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Droplets, Leaf, Sun, Thermometer } from "lucide-react";
 import { useState } from "react";
-import type { ActuatorAvailability, ActuatorKey, ConnectionState, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
+import type { ActuatorAvailability, ActuatorKey, CommandActuator, ConnectionState, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
+import { ACTUATOR_COPY } from "../data/mockSnowberry";
 import { formatTimeAgo } from "../utils/date";
 import { connectionVisual, getDashboardSummary, getGrowthPhaseInfo, getSensorMetrics, sensorVisual } from "../utils/status";
+import { sensorScale } from "../utils/gaugeScale";
 import { ActuatorCard } from "../components/ActuatorCard";
 import { HumidifierCard } from "../components/HumidifierCard";
 import { CardSkeleton, SummarySkeleton } from "../components/LoadingSkeleton";
@@ -19,31 +21,6 @@ const SENSOR_ICONS = {
   light: Sun,
   soil: Leaf,
 };
-
-function sensorPercent(id: string, status: RealtimeStatus, thresholds: ThresholdConfig): number {
-  switch (id) {
-    case "temperature": {
-      const v = status.sensors.temperature_c;
-      if (v === null) return 0;
-      return Math.min(100, Math.max(0, ((v - 10) / 30) * 100));
-    }
-    case "humidity": {
-      const v = status.sensors.humidity_pct;
-      return v === null ? 0 : v;
-    }
-    case "light": {
-      const v = status.sensors.lux;
-      if (v === null) return 0;
-      return Math.min(100, (v / (thresholds.lux_high * 1.2)) * 100);
-    }
-    case "soil": {
-      const v = status.sensors.soil_pct;
-      return v === null ? 0 : v;
-    }
-    default:
-      return 0;
-  }
-}
 
 function naturalDliEstimate(history: TelemetryPoint[]) {
   return history.slice(1).reduce((total, point, index) => {
@@ -67,7 +44,11 @@ export function DashboardPage({
   onAuto,
   onRewaterRequest,
   onOpenChecks,
+  onOpenSensor,
+  onHumidifierToggle,
+  onHumidifierAuto,
   initialTab = "today",
+  focusSensor,
 }: {
   status: RealtimeStatus;
   thresholds: ThresholdConfig;
@@ -76,16 +57,23 @@ export function DashboardPage({
   connection: ConnectionState;
   isLoading: boolean;
   sendingActuator: ActuatorKey | null;
-  onManualRequest: (key: ActuatorKey) => void;
+  onManualRequest: (key: CommandActuator) => void;
   onToggle: (key: ActuatorKey) => void;
   onExtend: (key: ActuatorKey) => void;
   onAuto: (key: ActuatorKey) => void;
   onRewaterRequest: () => void;
   onOpenChecks: (checks: import("../types").DailyCheckItem[]) => void;
+  onOpenSensor: (id: "temperature" | "humidity" | "light" | "soil") => void;
+  onHumidifierToggle: () => void;
+  onHumidifierAuto: () => void;
   initialTab?: DashboardTab;
+  focusSensor?: "temperature" | "humidity" | "light" | "soil" | null;
 }) {
   const subTab = initialTab;
-  const [plantIndex, setPlantIndex] = useState(0);
+  // Ketuk gauge di Beranda membuka penjelasan sensor itu, bukan selalu sensor pertama.
+  const SENSOR_ORDER = ["temperature", "humidity", "light", "soil"] as const;
+  const focusIndex = focusSensor ? SENSOR_ORDER.indexOf(focusSensor) : -1;
+  const [plantIndex, setPlantIndex] = useState(focusIndex >= 0 ? focusIndex : 0);
   const [plantDirection, setPlantDirection] = useState<"next" | "previous">("next");
 
   if (isLoading) {
@@ -109,11 +97,13 @@ export function DashboardPage({
     return b.severity - a.severity;
   }).filter((metric) => metric.issue).slice(0, 2);
   const connectionCopy = connectionVisual[connection];
-  const activeTools = [
-    status.actuators?.growlight?.state && "Lampu",
-    status.actuators?.pump?.state && "Pompa",
-    ((status.actuators?.mist?.state || status.actuators?.fan?.state)) && "Pengatur Kelembapan",
-  ].filter(Boolean);
+  // Satu kosakata alat: nama di footer sama dengan nama di kartu Alat.
+  const activeTools: string[] = [];
+  if (status.actuators?.growlight?.state) activeTools.push(ACTUATOR_COPY.growlight.label);
+  if (status.actuators?.pump?.state) activeTools.push(ACTUATOR_COPY.pump.label);
+  if (status.actuators?.humidifier?.state) {
+    activeTools.push(ACTUATOR_COPY.humidifier.label);
+  }
   const actionableChecks = summary.checks.filter((check) => check.tone !== "safe");
   const dliTarget = phase.key === "vegetative" ? 15 : phase.key === "flowering" ? 20 : 25;
   const estimatedDli = naturalDliEstimate(history);
@@ -140,9 +130,9 @@ export function DashboardPage({
             title={summary.title}
              detail={summary.detail}
              action={summary.action}
-             phase={`Fase ${phase.name}`}
-             issueCount={Math.max(0, actionableChecks.length - 1)}
-             onOpenChecks={() => onOpenChecks(actionableChecks.slice(1))}
+             phase={phase.shortTitle}
+             checkCount={actionableChecks.length}
+             onOpenChecks={() => onOpenChecks(actionableChecks)}
              updatedText={`Diperbarui ${formatTimeAgo(status.last_seen, now)}`}
            />
 
@@ -151,19 +141,23 @@ export function DashboardPage({
                {sendingActuator === "pump" ? "Mengirim..." : "Siram Kembali"}
              </button>
            )}
- 
+
            <section className="sensor-gauge-grid" aria-label="Kondisi utama">
             {metrics.map((metric) => {
               const Icon = SENSOR_ICONS[metric.id];
+              const scale = sensorScale(metric.id, status, thresholds);
               return (
                 <SensorGauge
                   key={metric.id}
                   value={metric.value}
                   label={metric.shortLabel}
                   status={connection === "offline" ? "unknown" : metric.status}
-                  percent={sensorPercent(metric.id, status, thresholds)}
+                  band={scale.bandLabel}
+                  markerPercent={scale.markerPercent}
+                  bandStartPercent={scale.bandStartPercent}
+                  bandWidthPercent={scale.bandWidthPercent}
                   icon={<Icon size={18} strokeWidth={2.2} aria-hidden="true" />}
-                  onClick={undefined}
+                  onClick={() => onOpenSensor(metric.id)}
                 />
               );
             })}
@@ -176,7 +170,6 @@ export function DashboardPage({
                   ? `Alat aktif: ${activeTools.join(", ")}`
                   : "Semua alat standby"}
               </span>
-              <span>Diperbarui {formatTimeAgo(status.last_seen, now)}</span>
             </div>
 
           </section>
@@ -205,18 +198,6 @@ export function DashboardPage({
               </div>
             </section>;
           })()}
-
-          <article className="card target-card">
-            <h2>Patokan Fase {phase.name}</h2>
-            <dl>
-              {Object.entries(phase.targets).map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </article>
         </>
       )}
 
@@ -250,8 +231,13 @@ export function DashboardPage({
           {status.actuators && (
             <HumidifierCard
               actuators={status.actuators}
-              availability={connection === "offline" || sendingActuator === "mist" || sendingActuator === "fan" ? "offline_disabled" : "ready"}
-              onManualRequest={() => onManualRequest("mist")}
+              now={now}
+              availability={connection === "offline" || sendingActuator === "humidifier" ? "offline_disabled" : "ready"}
+              onManualRequest={() => onManualRequest("humidifier")}
+              onToggle={onHumidifierToggle}
+              onAuto={onHumidifierAuto}
+              rhLow={thresholds.rh_low}
+              rhHigh={thresholds.rh_high}
             />
           )}
         </section>

@@ -6,7 +6,6 @@
   --color-green: #006241;
   --color-green-action: #00754a;
   --color-green-dark: #1e3932;
-  --color-green-uplift: #2b5148;
   --color-green-light: #d4e9e2;
   --color-gold: #cba258;
   --color-warning: #fbbc05;
@@ -15,14 +14,12 @@
   --color-danger-soft: rgba(200, 32, 20, 0.06);
   --color-text: rgba(0, 0, 0, 0.87);
   --color-text-soft: rgba(0, 0, 0, 0.58);
-  --color-white-soft: rgba(255, 255, 255, 0.7);
   --color-border: rgba(0, 0, 0, 0.12);
   --color-input: #ffffff;
   --color-nav: #ffffff;
   --radius-card: 20px;
   --radius-pill: 50px;
   --shadow-card: 0 0 0 1px rgba(30, 57, 50, 0.05), 0 2px 6px rgba(30, 57, 50, 0.05), 0 6px 14px rgba(30, 57, 50, 0.08);
-  --shadow-nav: 0 1px 3px rgba(0, 0, 0, 0.1), 0 2px 2px rgba(0, 0, 0, 0.06), 0 0 2px rgba(0, 0, 0, 0.07);
   --shadow-float: 0 0 6px rgba(0, 0, 0, 0.24), 0 8px 12px rgba(0, 0, 0, 0.14);
   --status-safe-bg: #d4e9e2;
   --status-safe-text: #1e3932;
@@ -509,8 +506,9 @@ main {
   font-size: 14px;
 }
 
+/* Hero berlatar gelap: warisi warna teks hero, jangan token teks gelap. */
 .hero-updated {
-  color: var(--color-text-soft);
+  color: rgba(255, 255, 255, 0.82);
   font-size: 12px;
   font-weight: 800;
 }
@@ -526,76 +524,127 @@ main {
 .sensor-gauge {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
-  min-height: 142px;
-  padding: 14px 10px 12px;
+  min-height: 132px;
+  padding: 14px 12px 12px;
   border: none;
   border-radius: var(--radius-card);
   background: var(--color-card);
   box-shadow: var(--shadow-card);
   cursor: pointer;
+  text-align: left;
   transition: transform 0.2s ease;
 }
 
 .sensor-gauge:active {
-  transform: scale(0.95);
+  transform: scale(0.97);
 }
 
-.gauge-wrap {
-  position: relative;
-  width: 88px;
-  height: 88px;
+.gauge-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .gauge-icon {
-  position: absolute;
-  top: -2px;
-  left: -2px;
   display: inline-flex;
-  width: 30px;
-  height: 30px;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  background: var(--color-card);
   color: var(--color-green-action);
 }
 
-.gauge-ring {
-  width: 88px;
-  height: 88px;
+.gauge-label {
+  color: var(--color-text-soft);
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.gauge-fill {
-  transition: stroke-dashoffset 0.8s ease;
+/* Nilai dan status ditumpuk: "1.850 lux" + pil tidak muat sebaris di 360px,
+   angka jadi terpotong dua baris dan batang antar kartu tidak sejajar. */
+.gauge-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
-.gauge-content {
+.gauge-value {
+  color: var(--color-text);
+  font-size: 22px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+/* "Aman" dan "Perlu Cek" harus satu bentuk. Kelas .pill belum pernah
+   didefinisikan, jadi status aman tampil polos dan terkesan komponen lain. */
+.sensor-gauge .pill {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sensor-gauge .pill.tone-safe {
+  background: var(--status-safe-bg);
+  color: var(--status-safe-text);
+}
+
+.sensor-gauge .pill.tone-warning {
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+}
+
+.sensor-gauge .pill.tone-danger {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+
+.sensor-gauge .pill.tone-unknown {
+  background: var(--status-unknown-bg);
+  color: var(--status-unknown-text);
+}
+
+/* Batang rentang nyaman: hijau = aman, penanda = nilai sekarang.
+   Menggantikan cincin lama yang menggambar 82% RH seolah hampir penuh dan sehat. */
+.band-track {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+}
+
+.band-safe {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-green-action);
+  opacity: 0.35;
+}
+
+.band-marker {
   position: absolute;
   top: 50%;
-  left: 50%;
-  transform: translate(-50%, -56%);
-  max-width: 60px;
-  pointer-events: none;
-  text-align: center;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--color-card);
+  border-radius: 50%;
+  background: var(--color-text);
 }
 
-.gauge-content strong {
-  display: block;
-  color: var(--color-text);
-  font-size: 15px;
-  line-height: 1.1;
-  overflow-wrap: anywhere;
-}
+.band-marker.tone-safe { background: var(--color-green-action); }
+.band-marker.tone-warning { background: var(--color-warning); }
+.band-marker.tone-danger { background: var(--color-danger); }
 
-.gauge-label {
-  display: block;
+.gauge-hint {
   color: var(--color-text-soft);
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  text-align: center;
+  font-size: 13px;
 }
 
 /* ═══ TODAY FOOTER ═══ */
@@ -918,6 +967,97 @@ main {
   gap: 0;
 }
 
+/* Garis waktu fase: pengganti bar /90 hari yang menyiratkan tanam "selesai". */
+.phase-timeline {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phase-timeline li {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+/* Garis penghubung antar fase digambar ke belakang titik. */
+.phase-timeline li::before {
+  position: absolute;
+  top: 5px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.22);
+  content: "";
+}
+
+.phase-timeline li:first-child::before { left: 50%; width: 50%; }
+.phase-timeline li:last-child::before { width: 50%; }
+.phase-timeline li.done::before,
+.phase-timeline li.current::before { background: rgba(255, 255, 255, 0.7); }
+
+.phase-dot {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.phase-timeline li.done .phase-dot { background: rgba(255, 255, 255, 0.7); }
+.phase-timeline li.current .phase-dot {
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.24);
+}
+
+/* Garis waktu berada di dalam kartu hijau tua, jadi semua warnanya
+   harus terang. Token teks gelap membuat "Berbunga" hilang di latar sewarna. */
+.phase-name {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.phase-timeline li.current .phase-name { color: #ffffff; }
+
+/* Pilihan merusak di dalam dialog: kotak centang sejajar teks. */
+.checkbox-field {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.checkbox-field input {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* Aksi merusak: tautan teks di bawah, bukan tombol sejajar Simpan. */
+.reset-link {
+  justify-self: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-soft);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+/* Kontrol manual = keadaan tidak biasa, diberi tepi amber agar terlihat. */
+.actuator-card.is-manual {
+  border: 2px solid var(--color-warning);
+}
+
 .card h3 {
   color: var(--color-text);
   font-size: 17px;
@@ -1087,10 +1227,10 @@ main {
 
 .icon-btn {
   display: inline-flex;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  min-height: 40px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--color-border);
@@ -1461,6 +1601,18 @@ main {
   fill: var(--color-green-dark);
 }
 
+/* Segmen di luar batas: petani melihat KAPAN masalahnya, bukan hanya jumlahnya. */
+.chart-card polyline.chart-breach {
+  stroke: var(--color-warning);
+  stroke-width: 5;
+}
+
+.chart-note {
+  margin: 0;
+  color: var(--color-text-soft);
+  font-size: 13px;
+}
+
 .chart-current {
   color: var(--color-green-dark);
   font-weight: 800;
@@ -1617,12 +1769,12 @@ main {
   left: 16px;
   z-index: 9;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
   max-width: 680px;
   min-height: var(--bottom-nav-height);
   margin: 0 auto;
-  padding: 8px;
+  padding: 8px 6px;
   border-radius: var(--radius-pill);
   background: var(--color-nav);
   border: 1px solid var(--color-border);
@@ -1632,7 +1784,124 @@ main {
 .bottom-nav button {
   flex-direction: column;
   gap: 2px;
-  font-size: 11px;
+  min-width: 0;
+  padding: 6px 2px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+/* Daftar edukasi: accordion sederhana, satu bagian terbuka. */
+.edu-list {
+  display: grid;
+  gap: 4px;
+}
+
+.edu-item {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.edu-item:last-child {
+  border-bottom: none;
+}
+
+.edu-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 12px 0;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.edu-toggle span {
+  display: grid;
+  gap: 2px;
+}
+
+.edu-toggle strong {
+  font-size: 15px;
+  color: var(--color-green-dark);
+}
+
+.edu-toggle em {
+  font-size: 13px;
+  font-style: normal;
+  color: var(--color-text-soft);
+}
+
+.edu-toggle svg {
+  flex-shrink: 0;
+  color: var(--color-text-soft);
+  transition: transform 0.18s ease;
+}
+
+.edu-item.open .edu-toggle svg {
+  transform: rotate(180deg);
+}
+
+.edu-item ul {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text);
+}
+
+.edu-footer {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  color: var(--color-text-soft);
+  font-size: 14px;
+}
+
+/* Pita batas aman pada grafik riwayat. */
+.chart-card svg .chart-band {
+  fill: var(--color-green-light);
+  opacity: 0.55;
+  stroke: none;
+}
+
+.chart-card svg .chart-band-edge {
+  stroke: var(--color-green-action);
+  stroke-width: 0.6;
+  stroke-dasharray: 3 2;
+  opacity: 0.7;
+}
+
+.chart-band-note {
+  margin: 6px 0 0;
+  color: var(--color-text-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Layar 360px: label nav tetap satu baris tanpa terpotong. */
+@media (max-width: 379px) {
+  .bottom-nav button {
+    letter-spacing: -0.2px;
+  }
+
+  /* Grid 3 kolom terlalu sempit di HP kecil: turunkan ke 2 kolom. */
+  .summary-meta-grid,
+  .chart-stats,
+  .companion-insights {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  main {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1791,6 +2060,11 @@ main {
   .two-column,
   .field-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Grafik tunggal tetap satu kolom penuh, juga di desktop. */
+  .chart-grid.chart-grid-single {
+    grid-template-columns: 1fr;
   }
 
   .measurement-live-grid {

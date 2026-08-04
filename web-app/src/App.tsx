@@ -4,11 +4,16 @@ import { ConfirmManualModal } from "./components/ConfirmManualModal";
 import { ConfirmRewaterModal } from "./components/ConfirmRewaterModal";
 import { StartupScreen } from "./components/StartupScreen";
 import { useSnowberryData } from "./services/useSnowberryData";
+import { useFaultNotifications } from "./services/useFaultNotifications";
 import { newCommandId } from "./services/dataSource";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { GrowthPhasePage } from "./pages/GrowthPhasePage";
+import { EduPage } from "./pages/EduPage";
 import { CheckPage } from "./pages/CheckPage";
-import type { ActuatorKey, Page } from "./types";
+import { ThresholdsPage } from "./pages/ThresholdsPage";
+import { LoginPage } from "./pages/LoginPage";
+import type { ActuatorKey, CommandActuator, Page } from "./types";
 import { getConnectionState } from "./utils/status";
 
 function ackFallbackMessage(status: string) {
@@ -25,7 +30,9 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [thresholds, setThresholds] = useState(data.thresholds);
   const [status, setStatus] = useState(data.status);
-  const [manualCandidate, setManualCandidate] = useState<ActuatorKey | null>(null);
+  const [manualCandidate, setManualCandidate] = useState<CommandActuator | null>(null);
+  // Sensor yang diketuk di Beranda, dibuka di halaman penjelasan.
+  const [focusSensor, setFocusSensor] = useState<"temperature" | "humidity" | "light" | "soil" | null>(null);
   const [rewaterCandidate, setRewaterCandidate] = useState(false);
   const [sendingActuator, setSendingActuator] = useState<ActuatorKey | null>(null);
   const [pendingAck, setPendingAck] = useState<{ commandId: string; actuator: ActuatorKey; timeoutAt: number } | null>(
@@ -36,6 +43,7 @@ export default function App() {
   const [startupElapsed, setStartupElapsed] = useState(false);
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [checks, setChecks] = useState<import("./types").DailyCheckItem[]>([]);
+  const [journalEntries, setJournalEntries] = useState<import("./types").FarmJournalEntry[]>([]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -115,11 +123,17 @@ export default function App() {
   }, [now]);
 
   const connection = getConnectionState(status, now);
+  useFaultNotifications(status, connection);
   const canOpenApp = startupElapsed && (data.statusReady || startupTimedOut);
+
+  if (!data.authReady) return <StartupScreen showSetup={false} onSave={() => {}} />;
+  if (data.error && !data.currentUid) return <StartupScreen showSetup={false} onSave={() => {}} unavailable />;
+  if (!data.currentUid) return <LoginPage login={data.login} register={data.register} />;
 
   const actuators = status.actuators || {};
   const rewaterState = actuators.pump ? actuators.pump.state : false;
 
+  if (startupTimedOut && !data.statusReady) return <StartupScreen showSetup={false} onSave={() => {}} unavailable />;
   if (!canOpenApp) return <StartupScreen showSetup={false} onSave={() => {}} />;
 
   if (data.statusReady && !data.profile) {
@@ -137,8 +151,10 @@ export default function App() {
     track = true,
   ) => {
     const duration = 30 * 60_000;
-    const manualUntil = manualUntilOverride ?? Date.now() + duration;
-    const remainingDuration = Math.max(1, manualUntil - Date.now());
+    const issuedAt = Date.now();
+    const manualUntil = mode === "MANUAL"
+      ? manualUntilOverride ?? issuedAt + duration
+      : issuedAt;
     const commandId = newCommandId();
     if (track) {
       setSendingActuator(key);
@@ -149,19 +165,28 @@ export default function App() {
       actuator: key,
       mode,
       state,
-      manual_duration_ms: mode === "MANUAL" ? remainingDuration : duration,
       manual_until: manualUntil,
-      issued_at: Date.now(),
-      issued_by: "web_user",
+      issued_at: issuedAt,
+      issued_by: data.currentUid ?? "",
     });
   };
 
-  const activateManual = (key: ActuatorKey) => {
+  const emitCommand = (
+    key: CommandActuator,
+    state: boolean,
+    mode: "AUTO" | "MANUAL",
+    manualUntilOverride?: number,
+  ) => {
+    emitManualCommand(key, state, mode, manualUntilOverride);
+  };
+
+  const activateManual = (key: CommandActuator) => {
     emitManualCommand(key, status.actuators[key].state, "MANUAL");
   };
 
   const requestRewater = () => {
     const commandId = newCommandId();
+    const issuedAt = Date.now();
     setSendingActuator("pump");
     setPendingAck({ commandId, actuator: "pump", timeoutAt: Date.now() + 20_000 });
     void data.sendCommand({
@@ -169,11 +194,11 @@ export default function App() {
       actuator: "pump",
       mode: "MANUAL",
       state: true,
-      command_type: "REWATER",
-      manual_duration_ms: 1,
-      manual_until: null,
-      issued_at: Date.now(),
-      issued_by: "web_user",
+      // Batas validitas command. Pompa tetap hanya menjalankan satu pulse
+      // sesuai pump_pulse_ms, bukan menyala selama 30 menit.
+      manual_until: issuedAt + 30 * 60_000,
+      issued_at: issuedAt,
+      issued_by: data.currentUid ?? "",
     });
   };
 
@@ -217,11 +242,21 @@ export default function App() {
              setChecks(next);
              setPage("check");
            }}
+          onOpenSensor={(id) => {
+            setFocusSensor(id);
+            setPage("sensor");
+          }}
+          onHumidifierToggle={() => {
+            const anyOn = actuators.humidifier.state;
+            const until = actuators.humidifier.manual_until ?? Date.now() + 30 * 60_000;
+            emitCommand("humidifier", !anyOn, "MANUAL", until);
+          }}
+          onHumidifierAuto={() => emitCommand("humidifier", false, "AUTO")}
           initialTab="today"
         />
       )}
 
-      {(page === "plants" || page === "tools") && (
+      {page === "tools" && (
         <DashboardPage
           status={status}
           thresholds={thresholds}
@@ -249,12 +284,102 @@ export default function App() {
             setChecks(next);
             setPage("check");
           }}
+          onOpenSensor={(id) => {
+            setFocusSensor(id);
+            setPage("sensor");
+          }}
+          onHumidifierToggle={() => {
+            const anyOn = actuators.humidifier.state;
+            const until = actuators.humidifier.manual_until ?? Date.now() + 30 * 60_000;
+            emitCommand("humidifier", !anyOn, "MANUAL", until);
+          }}
+          onHumidifierAuto={() => emitCommand("humidifier", false, "AUTO")}
           initialTab={page}
         />
       )}
 
-      {page === "history" && <HistoryPage history={data.telemetry} isLoading={isLoading} />}
+      {page === "plants" && (
+        <GrowthPhasePage
+          thresholds={thresholds}
+          isLoading={isLoading}
+          journalEntries={journalEntries}
+          onEditDate={() => setPage("settings")}
+          onOpenEdu={() => setPage("edu")}
+          onJournalAdd={(entry) => {
+            setJournalEntries((prev) => [entry, ...prev]);
+            setToast(entry.type === "planting" ? "Catatan tanam tersimpan" : "Catatan panen tersimpan");
+          }}
+          onResetPlantingDate={() => {
+            // Tanam/panen baru memulai siklus: HST dihitung ulang dari hari ini.
+            const today = new Date();
+            today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+            void data.saveThresholds({ ...thresholds, planting_date: today.toISOString().slice(0, 10) });
+          }}
+        />
+      )}
+
+      {page === "sensor" && (
+        <DashboardPage
+          status={status}
+          thresholds={thresholds}
+          history={data.telemetry}
+          now={now}
+          connection={connection}
+          isLoading={isLoading}
+          sendingActuator={sendingActuator}
+          onManualRequest={(key) => {
+            if (connection !== "offline") setManualCandidate(key);
+          }}
+          onToggle={(key) => {
+            const act = actuators[key];
+            if (!act) return;
+            emitManualCommand(key, !act.state, "MANUAL", act.manual_until ?? Date.now() + 30 * 60_000);
+          }}
+          onExtend={(key) => {
+            const act = actuators[key];
+            if (!act) return;
+            emitManualCommand(key, act.state, "MANUAL", Date.now() + 30 * 60_000);
+          }}
+          onAuto={(key) => emitManualCommand(key, false, "AUTO")}
+          onRewaterRequest={() => setRewaterCandidate(true)}
+          onOpenChecks={(next) => {
+            setChecks(next);
+            setPage("check");
+          }}
+          onOpenSensor={(id) => setFocusSensor(id)}
+          onHumidifierToggle={() => {
+            const anyOn = actuators.humidifier.state;
+            const until = actuators.humidifier.manual_until ?? Date.now() + 30 * 60_000;
+            emitCommand("humidifier", !anyOn, "MANUAL", until);
+          }}
+          onHumidifierAuto={() => emitCommand("humidifier", false, "AUTO")}
+          initialTab="plants"
+          focusSensor={focusSensor}
+        />
+      )}
+
+      {page === "edu" && <EduPage onBack={() => setPage("plants")} />}
+
+      {page === "history" && (
+        <HistoryPage
+          history={data.telemetry}
+          isLoading={isLoading}
+          thresholds={data.thresholds}
+          loadRange={data.loadRange}
+        />
+      )}
       {page === "check" && <CheckPage checks={checks} onBack={() => setPage("dashboard")} />}
+      {page === "settings" && (
+        <ThresholdsPage
+          thresholds={thresholds}
+          connection={connection}
+          isLoading={isLoading}
+          onSave={(next) => data.saveThresholds(next)}
+          onToast={setToast}
+          cloudOnline={data.cloudOnline}
+          appliedConfigId={status.applied_config_id}
+        />
+      )}
 
       {rewaterCandidate && (
         <ConfirmRewaterModal

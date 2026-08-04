@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { CalendarDays, Sprout, Wheat } from "lucide-react";
+import { BookOpen, CalendarDays, Sprout, Wheat } from "lucide-react";
 import type { FarmJournalEntry, ThresholdConfig } from "../types";
 import { CardSkeleton } from "../components/LoadingSkeleton";
 import { SectionHero } from "../components/SectionHero";
+import { PhaseTimeline } from "../components/PhaseTimeline";
 import { getGrowthPhaseInfo } from "../utils/status";
 
 function todayInputValue() {
@@ -27,6 +28,7 @@ export function GrowthPhasePage({
   onEditDate,
   onJournalAdd,
   onResetPlantingDate,
+  onOpenEdu,
 }: {
   thresholds: ThresholdConfig;
   isLoading: boolean;
@@ -34,10 +36,14 @@ export function GrowthPhasePage({
   onEditDate: () => void;
   onJournalAdd: (entry: FarmJournalEntry) => void;
   onResetPlantingDate: () => void;
+  onOpenEdu: () => void;
 }) {
   const [journalMode, setJournalMode] = useState<"planting" | "harvest" | null>(null);
   const [quantity, setQuantity] = useState("");
   const [note, setNote] = useState("");
+  const [quantityError, setQuantityError] = useState("");
+  // Tanam = mulai siklus baru; Panen = lanjut siklus yang sama.
+  const [startNewCycle, setStartNewCycle] = useState(true);
 
   if (isLoading) {
     return (
@@ -52,19 +58,18 @@ export function GrowthPhasePage({
   }
 
   const phase = getGrowthPhaseInfo(thresholds.planting_date);
-  const progress = Math.min(100, Math.round((phase.hst / 90) * 100));
   const journalCopy =
     journalMode === "planting"
       ? {
           title: "Tanam Hari Ini?",
-          body: "Tanggal tanam akan direset ke hari ini. Anda boleh menambahkan jumlah bibit atau catatan singkat.",
+          body: "Catatan tanam disimpan di jurnal.",
           label: "Jumlah bibit",
           unit: "bibit",
           confirm: "Simpan Tanam",
         }
       : {
           title: "Catat Panen Hari Ini?",
-          body: "Catatan panen disimpan di jurnal mock. Tanggal tanam juga direset ke hari ini untuk memulai siklus baru.",
+          body: "Catatan panen disimpan di jurnal.",
           label: "Hasil panen",
           unit: "kg",
           confirm: "Simpan Panen",
@@ -74,20 +79,34 @@ export function GrowthPhasePage({
     setJournalMode(null);
     setQuantity("");
     setNote("");
+    setQuantityError("");
+  };
+
+  const openJournal = (mode: "planting" | "harvest") => {
+    setJournalMode(mode);
+    setStartNewCycle(mode === "planting");
+    setQuantityError("");
   };
 
   const submitJournal = () => {
     if (!journalMode) return;
-    const numericQuantity = Number(quantity);
+    // Jumlah salah dulu dibuang diam-diam; sekarang petani diberi tahu.
+    const trimmed = quantity.trim();
+    const numericQuantity = Number(trimmed);
+    if (trimmed !== "" && (!Number.isFinite(numericQuantity) || numericQuantity <= 0)) {
+      setQuantityError("Isi angka lebih dari 0");
+      return;
+    }
     onJournalAdd({
       id: `${journalMode}-${Date.now()}`,
       type: journalMode,
       date: todayInputValue(),
-      quantity: Number.isFinite(numericQuantity) && numericQuantity > 0 ? numericQuantity : undefined,
+      quantity: trimmed === "" ? undefined : numericQuantity,
       unit: journalMode === "planting" ? "bibit" : "kg",
       note: note.trim() || undefined,
     });
-    onResetPlantingDate();
+    // Panen tidak mengulang umur tanaman kecuali petani memilihnya.
+    if (startNewCycle) onResetPlantingDate();
     closeJournal();
   };
 
@@ -98,28 +117,13 @@ export function GrowthPhasePage({
       </SectionHero>
 
       <section className="growth-card">
-        <span className="crop-badge">{phase.shortTitle}</span>
-        <p className="eyebrow">Hari ke-{phase.hst} setelah tanam</p>
+        <p className="eyebrow">{phase.shortTitle}</p>
         <h2>{phase.title}</h2>
-        <p>{phase.description}</p>
         <p className="summary-action">{phase.focus}</p>
-        <div className="progress-track" aria-label={`Perkembangan tanam ${progress}%`}>
-          <span style={{ width: `${progress}%` }} />
-        </div>
+        <PhaseTimeline current={phase.key} />
       </section>
 
       <section className="two-column">
-        <article className="card target-card">
-          <h3>Target Kondisi</h3>
-          <dl>
-            {Object.entries(phase.targets).map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </article>
         <article className="card phase-advice-card">
           <h3>Panduan Hari Ini</h3>
           <p>{phase.action}</p>
@@ -130,6 +134,10 @@ export function GrowthPhasePage({
           <div className="button-row">
             <button className="btn outline" type="button" onClick={onEditDate}>
               Ubah Tanggal Tanam
+            </button>
+            <button className="btn plain" type="button" onClick={onOpenEdu}>
+              <BookOpen size={18} aria-hidden="true" />
+              Panduan Lengkap
             </button>
           </div>
         </article>
@@ -144,11 +152,11 @@ export function GrowthPhasePage({
           <CalendarDays size={22} aria-hidden="true" />
         </div>
         <div className="journal-actions">
-          <button className="btn primary" type="button" onClick={() => setJournalMode("planting")}>
+          <button className="btn primary" type="button" onClick={() => openJournal("planting")}>
             <Sprout size={18} aria-hidden="true" />
             Tanam
           </button>
-          <button className="btn outline" type="button" onClick={() => setJournalMode("harvest")}>
+          <button className="btn outline" type="button" onClick={() => openJournal("harvest")}>
             <Wheat size={18} aria-hidden="true" />
             Panen
           </button>
@@ -180,12 +188,27 @@ export function GrowthPhasePage({
               <h2 id="journal-title">{journalCopy.title}</h2>
               <p>{journalCopy.body}</p>
             </div>
-            <label className="field">
+            <label className={`field ${quantityError ? "field-error" : ""}`}>
               <span>{journalCopy.label} (opsional)</span>
               <div className="input-with-unit">
-                <input inputMode="decimal" type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+                <input
+                  inputMode="decimal"
+                  type="number"
+                  value={quantity}
+                  onChange={(event) => {
+                    setQuantity(event.target.value);
+                    setQuantityError("");
+                  }}
+                />
                 <em>{journalCopy.unit}</em>
               </div>
+              {quantityError && <small>{quantityError}</small>}
+            </label>
+
+            {/* Reset umur tanaman itu merusak: harus dipilih sadar, bukan efek samping. */}
+            <label className="field checkbox-field">
+              <input type="checkbox" checked={startNewCycle} onChange={(event) => setStartNewCycle(event.target.checked)} />
+              <span>Mulai siklus tanam baru (umur tanaman diulang dari 0)</span>
             </label>
             <label className="field">
               <span>Catatan singkat (opsional)</span>

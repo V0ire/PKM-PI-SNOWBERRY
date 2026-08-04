@@ -25,9 +25,15 @@ const char* faultCode(Fault f);      // string kode, mis. "PUMP_NO_EFFECT"
 const char* faultMessage(Fault f);   // pesan Bahasa Indonesia untuk petani
 
 enum class ActuatorKey : uint8_t {
-  GROWLIGHT = 0, PUMP, MIST, FAN, MIST_2, FAN_2, COUNT
+  GROWLIGHT = 0,
+  PUMP,
+  HUMIDIFIER,
+  COUNT
 };
 enum class Mode : uint8_t { AUTO = 0, MANUAL };
+enum class HumidifierPriority : uint8_t { RH = 0, TEMPERATURE };
+enum class TemperatureFailureFallback : uint8_t { OFF = 0, RH_ONLY };
+enum class CalibrationSource : uint8_t { FACTORY_DEFAULT = 0, CALIBRATED };
 
 // Alasan aktuator ON/OFF, dipetakan ke field `reason` di Firestore.
 enum class Reason : uint8_t {
@@ -45,25 +51,30 @@ const char* reasonStr(Reason r);
 
 // Threshold + kalibrasi. Divalidasi sebelum dipakai/disimpan ke NVS.
 struct Thresholds {
+  char config_id[65] = "local-default";
   float temp_low = 16.0f;
   float temp_high = 28.0f;
   float rh_low = 65.0f;
-  float rh_high = 85.0f;   // Ciwidey dingin-lembap: fan buang lembap lebih sering
+  float rh_high = 85.0f;
+  bool temperature_influence = false;
+  HumidifierPriority humidifier_priority = HumidifierPriority::RH;
+  TemperatureFailureFallback temperature_failure_fallback = TemperatureFailureFallback::OFF;
   float soil_low = 30.0f;
   float soil_high = 60.0f;
   float lux_low = 2000.0f;
   float lux_high = 5000.0f;
-  uint32_t pump_pulse_ms = 10000;
-  uint32_t soak_period_ms = 600000;
-  uint16_t pump_start_limit = 2;
+  bool light_schedule_enabled = false;
+  uint8_t light_schedule_start_hour = 6;
+  uint8_t light_schedule_end_hour = 18;
+  uint32_t pump_pulse_ms = 45000;
+  uint32_t soak_period_ms = 900000;
+  uint8_t pump_start_limit = 2;
   uint32_t pump_window_ms = 18000000;
-  uint8_t light_window_start = 6;      // jam 06:00 boleh growlight
-  uint8_t light_window_end = 18;       // sampai 18:00
-  float max_light_hours_per_day = 14;  // batas DLI kasar untuk stroberi
 
   // Kalibrasi soil (raw ADC), disimpan per unit.
-  uint16_t soil_adc_dry = 0;
-  uint16_t soil_adc_wet = 0;
+  uint16_t soil_adc_dry = 3500;
+  uint16_t soil_adc_wet = 1500;
+  CalibrationSource calibration_source = CalibrationSource::FACTORY_DEFAULT;
 };
 
 struct SensorReading {
@@ -79,11 +90,9 @@ struct SensorReading {
   bool lux_valid = false;
   bool soil_valid = false;   // false jika belum kalibrasi atau ADC pinned
   bool psu_valid = false;
-
-  uint32_t temp_updated_ms = 0;
-  uint32_t rh_updated_ms = 0;
-  uint32_t lux_updated_ms = 0;
-  uint32_t soil_updated_ms = 0;
+  uint32_t temp_rh_at_ms = 0;
+  uint32_t lux_at_ms = 0;
+  uint32_t soil_at_ms = 0;
 };
 
 struct ActuatorState {

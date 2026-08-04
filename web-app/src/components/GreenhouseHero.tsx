@@ -1,21 +1,15 @@
-import { CircleCheck, CloudOff, CloudSun, TriangleAlert } from "lucide-react";
 import type { SensorStatusKey } from "../types";
-import { sensorVisual } from "../utils/status";
 
-const STATUS_ICON: Record<SensorStatusKey, typeof CircleCheck> = {
-  safe: CircleCheck,
-  warning: CloudSun,
-  danger: TriangleAlert,
-  unknown: CloudOff,
-};
-
+// Satu pesan per layar: judul (masalah), detail (angka vs batas), aksi, satu tombol.
+// Pil status dihapus dari sini — TopBar sudah menampilkan koneksi, warna kartu sudah
+// menyampaikan tingkat bahaya. Mengulanginya membuat petani membaca hal sama tiga kali.
 export function GreenhouseHero({
   tone,
   title,
   detail,
   action,
   phase,
-  issueCount,
+  checkCount,
   onOpenChecks,
   updatedText,
 }: {
@@ -24,24 +18,23 @@ export function GreenhouseHero({
   detail: string;
   action: string;
   phase: string;
-  issueCount: number;
+  checkCount: number;
   onOpenChecks: () => void;
   updatedText?: string;
 }) {
-  const visual = sensorVisual[tone];
-  const Icon = STATUS_ICON[tone];
-
   return (
-    <section className={`greenhouse-hero ${visual.className}`}>
+    <section className={`greenhouse-hero tone-${tone}`}>
       <div className="hero-copy">
-        <div className="hero-meta">
-          <span>{phase}</span>
-          <span><Icon size={14} aria-hidden="true" /> {visual.label}</span>
-        </div>
+        <p className="eyebrow">{phase}</p>
         <h1>{title}</h1>
         <p>{detail}</p>
         <p className="hero-action">{action}</p>
-        {issueCount > 0 && <button type="button" className="hero-check-link" onClick={onOpenChecks}>Ada {issueCount} masalah lain</button>}
+        {checkCount > 0 && (
+          <button type="button" className="hero-check-link" onClick={onOpenChecks}>
+            Lihat semua yang perlu dicek ({checkCount})
+          </button>
+        )}
+        {updatedText && <span className="hero-updated">{updatedText}</span>}
       </div>
     </section>
   );

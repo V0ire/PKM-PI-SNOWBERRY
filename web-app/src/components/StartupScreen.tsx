@@ -1,33 +1,40 @@
 import { Leaf } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PlantPhase } from "../types";
+import { FUN_FACTS } from "../data/education";
 
 export function StartupScreen({
   showSetup,
   onSave,
+  unavailable = false,
 }: {
   showSetup: boolean;
   onSave: (profile: { greenhouse_name: string; plant_phase: PlantPhase }) => void;
+  unavailable?: boolean;
 }) {
-  const facts = [
-    "Kelembapan tinggi terlalu lama dapat meningkatkan risiko jamur pada tanaman stroberi.",
-    "Media tanam yang terlalu basah dapat mengurangi udara untuk akar.",
-    "Cahaya dan lampu tanam dicatat terpisah agar kondisi tanaman lebih mudah dipantau.",
-  ];
-  const [factIndex, setFactIndex] = useState(0);
+  // Mulai dari fakta acak supaya pembukaan aplikasi tidak selalu sama.
+  const [factIndex, setFactIndex] = useState(() => Math.floor(Math.random() * FUN_FACTS.length));
   useEffect(() => {
-    const timer = window.setInterval(() => setFactIndex((index) => (index + 1) % facts.length), 5000);
+    const timer = window.setInterval(() => setFactIndex((index) => (index + 1) % FUN_FACTS.length), 5000);
     return () => window.clearInterval(timer);
-  }, [facts.length]);
+  }, []);
 
   if (showSetup) return <SetupForm onSave={onSave} />;
+
+  if (unavailable) return <main className="startup-screen" role="alert">
+    <span className="startup-mark"><Leaf size={54} strokeWidth={1.5} aria-hidden="true" /></span>
+    <p className="eyebrow">Perangkat Tidak Terhubung</p>
+    <h1>Data greenhouse belum masuk</h1>
+    <p>Periksa listrik box Snowberry dan koneksi Wi-Fi greenhouse. Keadaan perangkat belum dapat dipastikan sampai tersambung kembali.</p>
+    <button className="btn primary" type="button" onClick={() => window.location.reload()}>Coba Lagi</button>
+  </main>;
 
   return (
     <main className="startup-screen" aria-live="polite">
       <span className="startup-mark"><Leaf size={54} strokeWidth={1.5} aria-hidden="true" /></span>
       <p className="eyebrow">Snowberry</p>
       <h1>Menyiapkan kondisi greenhouse</h1>
-      <p>Tahukah Anda? {facts[factIndex]}</p>
+      <p>Tahukah Anda? {FUN_FACTS[factIndex]}</p>
     </main>
   );
 }

@@ -1,9 +1,10 @@
-import type { ActuatorKey, GreenhouseProfile, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
+import type { GreenhouseProfile, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
 import type { ManualCommand, SnowberryDataSource } from "./dataSource";
 import type { FirebaseEnv } from "./firebaseConfig";
-import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { doc, getDoc, getFirestore, onSnapshot, setDoc } from "firebase/firestore";
+import { normalizeRealtimeStatus, normalizeTelemetry, normalizeThresholdConfig } from "./normalizeFirestore";
+import { getSnowberryFirebaseApp } from "./firebaseClient";
 
 // Adapter Firestore sesuai docs/03-technical/api-contract.md.
 // Paths: devices/{deviceId}/status/realtime, config/thresholds,
@@ -16,62 +17,19 @@ function todayDocId(): string {
   return d.toISOString().slice(0, 10);
 }
 
-function normalizeStatus(data: Partial<RealtimeStatus>): RealtimeStatus {
-  const actuator = (key: ActuatorKey) => ({
-    mode: data.actuators?.[key]?.mode ?? "AUTO",
-    state: data.actuators?.[key]?.state ?? false,
-    manual_until: data.actuators?.[key]?.manual_until ?? null,
-    reason: data.actuators?.[key]?.reason,
-  });
-
-  return {
-    sensors: {
-      temperature_c: data.sensors?.temperature_c ?? null,
-      humidity_pct: data.sensors?.humidity_pct ?? null,
-      lux: data.sensors?.lux ?? null,
-      soil_pct: data.sensors?.soil_pct ?? null,
-      soil_raw_adc: data.sensors?.soil_raw_adc ?? null,
-      psu_voltage: data.sensors?.psu_voltage ?? null,
-    },
-    actuators: {
-      growlight: actuator("growlight"),
-      pump: actuator("pump"),
-      mist: actuator("mist"),
-      fan: actuator("fan"),
-    },
-    device: {
-      online: data.device?.online ?? false,
-      wifi_rssi: data.device?.wifi_rssi ?? 0,
-      firmware_version: data.device?.firmware_version ?? "",
-      ip_address: data.device?.ip_address,
-      uptime_seconds: data.device?.uptime_seconds ?? 0,
-      free_heap_bytes: data.device?.free_heap_bytes,
-      nvs_synced: data.device?.nvs_synced ?? false,
-      time_synced: data.device?.time_synced,
-    },
-    command_ack: {
-      ack_command_id: data.command_ack?.ack_command_id ?? "",
-      ack_status: data.command_ack?.ack_status ?? "",
-      ack_at: data.command_ack?.ack_at ?? null,
-      ack_message: data.command_ack?.ack_message ?? "",
-    },
-    fault: {
-      active_code: data.fault?.active_code ?? null,
-      active_message: data.fault?.active_message ?? null,
-      last_fault_code: data.fault?.last_fault_code ?? null,
-      last_fault_at: data.fault?.last_fault_at ?? null,
-    },
-    last_seen: typeof data.last_seen === "number" ? data.last_seen : 0,
-  };
+function dateDocIds(days: number): string[] {
+  const ids: string[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    ids.push(d.toISOString().slice(0, 10));
+  }
+  return ids;
 }
 
 export async function createFirebaseDataSource(env: FirebaseEnv): Promise<SnowberryDataSource> {
-  const app = initializeApp({
-    apiKey: env.apiKey,
-    authDomain: env.authDomain,
-    projectId: env.projectId,
-    appId: env.appId,
-  });
+  const app = getSnowberryFirebaseApp(env);
   const auth = getAuth(app);
   const db = getFirestore(app);
 
@@ -81,26 +39,35 @@ export async function createFirebaseDataSource(env: FirebaseEnv): Promise<Snowbe
   const thresholdsRef = doc(db, `${base}/config/thresholds`);
   const commandsRef = doc(db, `${base}/config/commands`);
 
-  const currentUid = () => auth.currentUser?.uid ?? "web_user";
+  const currentUid = () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) throw new Error("Silakan masuk sebelum mengubah pengaturan.");
+    return uid;
+  };
 
   return {
     kind: "firebase",
-    subscribeStatus(cb: (s: RealtimeStatus) => void) {
+    subscribeStatus(cb: (s: RealtimeStatus) => void, onError) {
       return onSnapshot(statusRef, (snap) => {
-        if (snap.exists()) cb(normalizeStatus(snap.data() as Partial<RealtimeStatus>));
-      });
+        if (!snap.exists()) return;
+        try { cb(normalizeRealtimeStatus(snap.data())); } catch { onError("Status perangkat tidak dapat dibaca."); }
+      }, () => onError("Status perangkat gagal dimuat dari Firebase."));
     },
-    subscribeThresholds(cb: (t: ThresholdConfig) => void) {
+    subscribeThresholds(cb: (t: ThresholdConfig) => void, onError) {
       return onSnapshot(thresholdsRef, (snap) => {
-        if (snap.exists()) cb(snap.data() as ThresholdConfig);
-      });
+        if (!snap.exists()) return;
+        try { cb(normalizeThresholdConfig(snap.data())); } catch { onError("Pengaturan perangkat tidak dapat dibaca."); }
+      }, () => onError("Pengaturan gagal dimuat dari Firebase."));
     },
-    async loadTelemetry(): Promise<TelemetryPoint[]> {
-      const ref = doc(db, `${base}/telemetry/${todayDocId()}`);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) return [];
-      const data = snap.data() as { d?: TelemetryPoint[]; samples?: TelemetryPoint[] };
-      return data.d ?? data.samples ?? [];
+    async loadTelemetry(days = 1): Promise<TelemetryPoint[]> {
+      const ids = days <= 1 ? [todayDocId()] : dateDocIds(days);
+      const snaps = await Promise.all(ids.map((id) => getDoc(doc(db, `${base}/telemetry/${id}`))));
+      const points: TelemetryPoint[] = [];
+      for (const snap of snaps) {
+        if (!snap.exists()) continue;
+        points.push(...normalizeTelemetry(snap.data()));
+      }
+      return points.sort((a, b) => a.ts - b.ts);
     },
     subscribeProfile(cb: (profile: GreenhouseProfile | null) => void) {
       return onSnapshot(deviceRef, (snap) => {
@@ -116,7 +83,6 @@ export async function createFirebaseDataSource(env: FirebaseEnv): Promise<Snowbe
       await setDoc(
         thresholdsRef,
         { ...thresholds, updated_at: Date.now(), updated_by: currentUid() },
-        { merge: true },
       );
     },
     async sendCommand(cmd: ManualCommand) {

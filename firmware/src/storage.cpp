@@ -38,27 +38,12 @@ bool saveSoilCalibration(uint16_t dry, uint16_t wet) {
   }
   t.soil_adc_dry = dry;
   t.soil_adc_wet = wet;
+  t.calibration_source = CalibrationSource::CALIBRATED;
   return saveThresholds(t);
 }
 
-bool loadPumpHistory(control::PumpHistory& out) {
-  const size_t n=g_prefs.getBytes("pump_hist",&out,sizeof(out));
-  return n==sizeof(out) && out.magic==0x50484D31 && out.version==1 && out.count<=2 &&
-         !(out.count==0 && !out.requires_conservative_lock) &&
-         !(out.count>0 && out.starts_epoch_ms[0]<=0) &&
-         !(out.count==2 && (out.starts_epoch_ms[1]<=0 || out.starts_epoch_ms[0]>out.starts_epoch_ms[1])) &&
-         out.checksum==control::pumpHistoryChecksum(out);
-}
-
-bool savePumpHistory(const control::PumpHistory& history) {
-  return history.magic==0x50484D31 && history.version==1 && history.count<=2 &&
-         history.checksum==control::pumpHistoryChecksum(history) &&
-         g_prefs.putBytes("pump_hist",&history,sizeof(history))==sizeof(history);
-}
-
-uint32_t incrementBootCount() {
-  const uint32_t value=g_prefs.getUInt("boot_count",0)+1;
-  return g_prefs.putUInt("boot_count",value)==sizeof(value) ? value : 0;
-}
+bool reservePumpStart() { return g_prefs.putBool("pump_lock", true) == 1; }
+bool setPumpBootLock(bool locked) { return g_prefs.putBool("pump_lock", locked) == 1; }
+bool pumpBootLock() { return g_prefs.getBool("pump_lock", true); }
 
 }  // namespace storage

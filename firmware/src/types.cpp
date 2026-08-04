@@ -39,7 +39,7 @@ const char* faultMessage(Fault f) {
     case Fault::COMMAND_EXPIRED: return "Perintah manual sudah kedaluwarsa.";
     case Fault::COMMAND_REJECTED_SAFETY: return "Perintah manual ditolak demi keamanan.";
     case Fault::PUMP_NO_EFFECT: return "Pompa menyiram tapi media tidak lembap. Periksa air, selang, atau sensor.";
-    case Fault::PUMP_MAX_CYCLE_REACHED: return "Batas penyiraman per jam tercapai. Pompa diistirahatkan.";
+    case Fault::PUMP_MAX_CYCLE_REACHED: return "Batas jumlah penyiraman tercapai. Pompa diistirahatkan.";
   }
   return "";
 }

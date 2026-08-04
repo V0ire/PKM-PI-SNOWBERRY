@@ -1,15 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Info } from "lucide-react";
 import type { ConnectionState, FormState, ThresholdConfig } from "../types";
 import { DEFAULT_THRESHOLDS } from "../data/mockSnowberry";
 import { FormSkeleton } from "../components/LoadingSkeleton";
 import { NoticeBanner } from "../components/NoticeBanner";
 import { SectionHero } from "../components/SectionHero";
-import { StatusPill } from "../components/StatusPill";
-import { connectionVisual, formVisual } from "../utils/status";
+import { connectionVisual } from "../utils/status";
+import { diffThresholds, sameThresholds, type ChangedField } from "../utils/thresholdDiff";
+import { validateThresholds } from "../utils/validateThresholds";
 
 type FieldKey = keyof ThresholdConfig;
-type FieldErrors = Partial<Record<FieldKey, string>>;
 type HelpTopic = "air" | "media" | "light" | "plant";
 
 const THRESHOLD_HELP: Record<
@@ -45,7 +45,7 @@ const THRESHOLD_HELP: Record<
   },
   plant: {
     title: "Tanggal Tanam",
-    body: "Tanggal tanam dipakai untuk menghitung HST dan menentukan fase tanaman.",
+    body: "Tanggal tanam dipakai untuk menghitung HST (Hari Setelah Tanam) dan menentukan fase tanaman.",
     rows: [
       { phase: "Hari 0-30", value: "Vegetatif" },
       { phase: "Hari 31-60", value: "Berbunga" },
@@ -54,58 +54,41 @@ const THRESHOLD_HELP: Record<
   },
 };
 
-function validate(form: ThresholdConfig): FieldErrors {
-  const errors: FieldErrors = {};
-  if (form.temp_low >= form.temp_high) {
-    errors.temp_low = "Suhu minimum harus lebih kecil dari suhu maksimum.";
-    errors.temp_high = "Suhu maksimum harus lebih besar dari suhu minimum.";
-  }
-  if (form.rh_low >= form.rh_high) {
-    errors.rh_low = "Kelembapan minimum harus lebih kecil dari kelembapan maksimum.";
-    errors.rh_high = "Kelembapan maksimum harus lebih besar dari kelembapan minimum.";
-  }
-  if (form.soil_low >= form.soil_high) {
-    errors.soil_low = "Media kering harus lebih kecil dari media basah.";
-    errors.soil_high = "Batas pompa berhenti harus lebih besar dari batas kering.";
-  }
-  if (form.lux_low >= form.lux_high) {
-    errors.lux_low = "Cahaya untuk menyalakan lampu harus lebih kecil.";
-    errors.lux_high = "Cahaya untuk mematikan lampu harus lebih besar.";
-  }
-  if (form.pump_pulse_ms > form.soak_period_ms) {
-    errors.pump_pulse_ms = "Lama pompa menyala tidak boleh lebih lama dari jeda resap.";
-    errors.soak_period_ms = "Jeda resap harus lebih lama atau sama dengan lama pompa menyala.";
-  }
-  return errors;
-}
-
-function sameThresholds(a: ThresholdConfig, b: ThresholdConfig) {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
 export function ThresholdsPage({
   thresholds,
   connection,
   isLoading,
   onSave,
   onToast,
+  cloudOnline,
+  appliedConfigId,
 }: {
   thresholds: ThresholdConfig;
   connection: ConnectionState;
   isLoading: boolean;
-  onSave: (thresholds: ThresholdConfig) => void;
+  onSave: (thresholds: ThresholdConfig) => void | Promise<void>;
   onToast: (message: string) => void;
+  cloudOnline: boolean;
+  appliedConfigId?: string;
 }) {
   const [form, setForm] = useState(thresholds);
   const [saveState, setSaveState] = useState<FormState>("clean");
   const [helpTopic, setHelpTopic] = useState<HelpTopic | null>(null);
-  const errors = useMemo(() => validate(form), [form]);
+  const [confirmDiff, setConfirmDiff] = useState<ChangedField[] | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const errors = useMemo(() => validateThresholds(form), [form]);
   const hasErrors = Object.keys(errors).length > 0;
   const dirty = !sameThresholds(form, thresholds);
-  const formState: FormState = saveState === "saving" || saveState === "saved" ? saveState : hasErrors ? "invalid" : dirty ? "dirty" : "clean";
-  const formCopy = formVisual[formState];
+  const pendingChanges = useMemo(() => diffThresholds(thresholds, form).length, [thresholds, form]);
 
-  const update = (key: FieldKey, value: number | string) => {
+  // Sinkron form saat thresholds baru datang dari Firestore, kecuali sedang diedit.
+  useEffect(() => {
+    setForm((current) => (sameThresholds(current, thresholds) || !dirty ? thresholds : current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thresholds]);
+  const formState: FormState = saveState === "saving" || saveState === "saved" ? saveState : hasErrors ? "invalid" : dirty ? "dirty" : "clean";
+
+  const update = (key: FieldKey, value: number | string | boolean) => {
     setSaveState("clean");
     setForm((current) => ({ ...current, [key]: value }));
   };
@@ -134,25 +117,26 @@ export function ThresholdsPage({
         </NoticeBanner>
       )}
 
-      <div className="form-status-row">
-        <StatusPill label={formCopy.label} className={formCopy.className} />
-        <p>{formCopy.message}</p>
-      </div>
+      {!cloudOnline && <NoticeBanner tone="danger" title="Aplikasi Tidak Terhubung"><p>Kontrol manual dan penyimpanan pengaturan dinonaktifkan sampai koneksi kembali.</p></NoticeBanner>}
+      {thresholds.config_id !== appliedConfigId && <NoticeBanner tone="warning" title="Belum Diterapkan"><p>{connection === "offline" ? "Tersimpan di aplikasi, menunggu perangkat tersambung." : "Pengaturan tersimpan dan menunggu perangkat."}</p></NoticeBanner>}
 
       <section className="form-stack">
         <FieldGroup
-          title="Udara Greenhouse"
-          text="Jika suhu atau kelembapan keluar dari batas ini, kipas atau kabut membantu menenangkan udara."
+          title="Pelembap - Kelembapan Udara"
+          text="Atur kapan Pelembap Udara meminta menyala dan mati berdasarkan kelembapan. Nilai yang dapat digunakan: 20-95%."
           onInfo={() => setHelpTopic("air")}
         >
-          <NumberField label="Suhu minimum" unit="°C" value={form.temp_low} error={errors.temp_low} onChange={(value) => update("temp_low", value)} />
-          <NumberField label="Suhu maksimum" unit="°C" value={form.temp_high} error={errors.temp_high} onChange={(value) => update("temp_high", value)} />
           <NumberField label="Kelembapan minimum" unit="%" value={form.rh_low} error={errors.rh_low} onChange={(value) => update("rh_low", value)} />
           <NumberField label="Kelembapan maksimum" unit="%" value={form.rh_high} error={errors.rh_high} onChange={(value) => update("rh_high", value)} />
         </FieldGroup>
 
+        <FieldGroup title="Pelembap - Pengaruh Suhu" text="Suhu dan kelembapan dipakai bersama untuk menentukan kerja pelembap." onInfo={() => setHelpTopic("air")}>
+          <ToggleField label="Gunakan suhu untuk mengendalikan pelembap" checked={form.temperature_influence} onChange={(value) => update("temperature_influence", value)} />
+          {form.temperature_influence && <><NumberField label="Pelembap mati jika suhu turun sampai" unit="°C" value={form.temp_low} error={errors.temp_low} onChange={(value) => update("temp_low", value)} /><NumberField label="Pelembap menyala jika suhu mencapai" unit="°C" value={form.temp_high} error={errors.temp_high} onChange={(value) => update("temp_high", value)} /><SelectField label="Jika suhu dan kelembapan memberi perintah berbeda" value={form.humidifier_priority} onChange={(value) => update("humidifier_priority", value)} options={[["RH","Utamakan kelembapan udara"],["TEMPERATURE","Utamakan suhu"]]} /><SelectField label="Jika data suhu tidak tersedia" value={form.temperature_failure_fallback} onChange={(value) => update("temperature_failure_fallback", value)} options={[["OFF","Matikan pelembap"],["RH_ONLY","Lanjutkan berdasarkan kelembapan udara"]]} /></>}
+        </FieldGroup>
+
         <FieldGroup
-          title="Media Tanam"
+          title="Media dan Pompa"
           text="Penyiraman dibuat bertahap agar akar stroberi tidak tergenang."
           onInfo={() => setHelpTopic("media")}
         >
@@ -172,55 +156,119 @@ export function ThresholdsPage({
             error={errors.soak_period_ms}
             onChange={(value) => update("soak_period_ms", Math.round(value * 1000))}
           />
+          <NumberField label="Batas Jumlah Penyiraman" unit="kali" value={form.pump_start_limit} error={errors.pump_start_limit} onChange={(value) => update("pump_start_limit", value)} />
+          <NumberField label="Lama periode pembatas" unit="jam" value={form.pump_window_ms / 3600000} error={errors.pump_window_ms} onChange={(value) => update("pump_window_ms", Math.round(value * 3600000))} />
         </FieldGroup>
 
         <FieldGroup
-          title="Cahaya"
-          text="Lampu tanam membantu saat cahaya alami belum cukup untuk stroberi putih."
+          title="Lampu Tanam"
+          text="Lampu menyala otomatis saat cahaya kurang."
           onInfo={() => setHelpTopic("light")}
         >
           <NumberField label="Lampu menyala jika cahaya di bawah" unit="lux" value={form.lux_low} error={errors.lux_low} onChange={(value) => update("lux_low", value)} />
           <NumberField label="Lampu mati jika cahaya di atas" unit="lux" value={form.lux_high} error={errors.lux_high} onChange={(value) => update("lux_high", value)} />
+          <ToggleField label="Gunakan jadwal lampu" checked={form.light_schedule_enabled} onChange={(value) => update("light_schedule_enabled", value)} />
+          {form.light_schedule_enabled && <><NumberField label="Mulai jadwal" unit="jam" value={form.light_schedule_start_hour} error={errors.light_schedule_start_hour} onChange={(value) => update("light_schedule_start_hour", value)} /><NumberField label="Selesai jadwal" unit="jam" value={form.light_schedule_end_hour} error={errors.light_schedule_end_hour} onChange={(value) => update("light_schedule_end_hour", value)} /></>}
         </FieldGroup>
-
-        <FieldGroup
-          title="Tanaman"
-          text="Tanggal ini dipakai untuk menghitung HST dan fase pertumbuhan tanaman."
-          onInfo={() => setHelpTopic("plant")}
-        >
-          <label className={`field ${errors.planting_date ? "field-error" : ""}`}>
-            <span>Tanggal tanam</span>
-            <input type="date" value={form.planting_date} onChange={(event) => update("planting_date", event.target.value)} />
-            {errors.planting_date && <small>{errors.planting_date}</small>}
-          </label>
-        </FieldGroup>
+        <FieldGroup title="Tanaman" text="Tanggal ini dipakai untuk menghitung HST dan fase pertumbuhan tanaman." onInfo={() => setHelpTopic("plant")}><label className="field"><span>Tanggal tanam</span><input type="date" value={form.planting_date} onChange={(event) => update("planting_date", event.target.value)} /></label></FieldGroup>
       </section>
 
       <section className="sticky-actions">
-        <button className="btn plain" type="button" onClick={() => setForm(thresholds)}>
-          Batal
-        </button>
-        <button className="btn outline" type="button" onClick={() => setForm(DEFAULT_THRESHOLDS)}>
-          Reset
+        <button className="btn plain" type="button" disabled={!dirty} onClick={() => setForm(thresholds)}>
+          Batalkan
         </button>
         <button
           className="btn primary"
           type="button"
-          disabled={hasErrors || formState === "saving"}
+          disabled={!cloudOnline || hasErrors || !dirty || formState === "saving"}
           onClick={() => {
-            setSaveState("saving");
-            window.setTimeout(() => {
-              const saved = { ...form, updated_at: Date.now(), updated_by: "uid_mock_petani" };
-              onSave(saved);
-              setForm(saved);
-              setSaveState("saved");
-              onToast("Batas otomatis disimpan. Perangkat akan memakai pengaturan baru setelah tersinkron.");
-            }, 450);
+            const changes = diffThresholds(thresholds, form);
+            if (changes.length === 0) return;
+            setConfirmDiff(changes);
           }}
         >
-          {formState === "saving" ? "Menyimpan..." : "Simpan"}
+          {formState === "saving" ? "Menyimpan..." : `Simpan ${pendingChanges} Perubahan`}
         </button>
       </section>
+
+      {/* Aksi merusak dipisah dari bar utama supaya tidak tertekan tidak sengaja. */}
+      <button className="reset-link" type="button" onClick={() => setConfirmReset(true)}>
+        Pakai Nilai Awal
+      </button>
+
+      {confirmDiff && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setConfirmDiff(null)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="threshold-confirm-title" onClick={(event) => event.stopPropagation()}>
+            <div>
+              <h2 id="threshold-confirm-title">Simpan Perubahan Batas?</h2>
+              <p>Pengaturan berikut akan diperbarui. Perangkat menerapkan dalam sekitar 60 detik.</p>
+            </div>
+            <div className="target-help-grid">
+              {confirmDiff.map((change) => (
+                <div key={change.key}>
+                  <strong>{change.label}</strong>
+                  <span>
+                    {change.before} → {change.after}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button className="btn plain" type="button" onClick={() => setConfirmDiff(null)}>
+                Batal
+              </button>
+              <button
+                className="btn primary"
+                type="button"
+                onClick={() => {
+                  setConfirmDiff(null);
+                  setSaveState("saving");
+                  const saved = { ...form, config_id: crypto.randomUUID(), updated_at: Date.now() };
+                  Promise.resolve(onSave(saved))
+                    .then(() => {
+                      setForm(saved);
+                      setSaveState("saved");
+                      onToast("Batas otomatis disimpan. Perangkat akan memakai pengaturan baru setelah tersinkron.");
+                    })
+                    .catch(() => {
+                      setSaveState("error");
+                      onToast("Gagal menyimpan batas. Periksa koneksi lalu coba lagi.");
+                    });
+                }}
+              >
+                Simpan
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {confirmReset && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setConfirmReset(false)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="threshold-reset-title" onClick={(event) => event.stopPropagation()}>
+            <div>
+              <h2 id="threshold-reset-title">Pakai Nilai Awal?</h2>
+              <p>Semua batas kembali ke setelan pabrik. Perubahan Anda hilang.</p>
+            </div>
+            <div className="modal-actions">
+              <button className="btn plain" type="button" onClick={() => setConfirmReset(false)}>
+                Batal
+              </button>
+              <button
+                className="btn primary"
+                type="button"
+                onClick={() => {
+                  // Tanggal tanam milik jurnal, bukan setelan pabrik: dipertahankan.
+                  setForm({ ...DEFAULT_THRESHOLDS, planting_date: form.planting_date });
+                  setConfirmReset(false);
+                }}
+              >
+                Pakai Nilai Awal
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {helpTopic && (
         <div className="modal-backdrop" role="presentation" onClick={() => setHelpTopic(null)}>
@@ -270,6 +318,9 @@ function FieldGroup({ title, text, children, onInfo }: { title: string; text: st
     </section>
   );
 }
+
+function ToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) { return <label className="field toggle-field"><span>{label}</span><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /></label>; }
+function SelectField({ label, value, options, onChange }: { label: string; value: string; options: string[][]; onChange: (value: string) => void }) { return <label className="field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([key,text]) => <option key={key} value={key}>{text}</option>)}</select></label>; }
 
 function NumberField({
   label,

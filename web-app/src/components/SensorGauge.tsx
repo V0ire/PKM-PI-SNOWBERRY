@@ -1,68 +1,70 @@
 import type { ReactNode } from "react";
 import type { SensorStatusKey } from "../types";
 
-const GAUGE_COLORS: Record<SensorStatusKey, string> = {
-  safe: "var(--status-safe-border)",
-  warning: "var(--status-warning-border)",
-  danger: "var(--status-danger-border)",
-  unknown: "var(--status-unknown-border)",
+// Kata status + posisi nilai pada rentang nyaman.
+// Cincin lama menipu: 82% RH tergambar hampir penuh seolah bagus, padahal di luar batas.
+const STATUS_LABEL: Record<SensorStatusKey, string> = {
+  safe: "Aman",
+  warning: "Perlu Cek",
+  danger: "Bahaya",
+  unknown: "Tidak Ada Data",
 };
-
-const TRACK_COLOR = "var(--color-border)";
 
 export function SensorGauge({
   value,
   label,
   status,
-  percent,
+  band,
+  markerPercent,
+  bandStartPercent,
+  bandWidthPercent,
   icon,
   onClick,
 }: {
   value: string;
   label: string;
   status: SensorStatusKey;
-  percent: number;
+  /** Teks rentang nyaman, mis. "60–80%". Disembunyikan jika tidak ada. */
+  band?: string;
+  /** Posisi nilai sekarang pada batang, 0–100. */
+  markerPercent: number;
+  /** Awal area hijau pada batang, 0–100. */
+  bandStartPercent: number;
+  /** Lebar area hijau pada batang, 0–100. */
+  bandWidthPercent: number;
   icon?: ReactNode;
   onClick?: () => void;
 }) {
-  const r = 38;
-  const stroke = 7;
-  const cx = 50;
-  const cy = 50;
-  const circumference = 2 * Math.PI * r;
-  const clampedPct = Math.max(0, Math.min(100, percent));
-  const offset = circumference * (1 - clampedPct / 100);
+  const clamp = (n: number) => Math.max(0, Math.min(100, n));
+  const marker = clamp(markerPercent);
+  const bandStart = clamp(bandStartPercent);
+  const bandWidth = clamp(bandWidthPercent);
+  const statusLabel = STATUS_LABEL[status];
 
   return (
     <button
       type="button"
       className={`sensor-gauge tone-${status}`}
       onClick={onClick}
-      aria-label={`${label}: ${value}`}
+      aria-label={`${label}: ${value}, ${statusLabel}${band ? `, nyaman ${band}` : ""}`}
     >
-      <div className="gauge-wrap">
+      <span className="gauge-head">
         {icon && <span className="gauge-icon">{icon}</span>}
-        <svg viewBox="0 0 100 100" className="gauge-ring">
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke={TRACK_COLOR} strokeWidth={stroke} opacity={0.25} />
-          <circle
-            cx={cx}
-            cy={cy}
-            r={r}
-            fill="none"
-            stroke={GAUGE_COLORS[status]}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            transform={`rotate(-90 ${cx} ${cy})`}
-            className="gauge-fill"
-          />
-        </svg>
-        <div className="gauge-content">
-          <strong>{value}</strong>
-        </div>
-      </div>
-      <span className="gauge-label">{label}</span>
+        <span className="gauge-label">{label}</span>
+      </span>
+      <span className="gauge-row">
+        <strong className="gauge-value">{value}</strong>
+        <span className={`pill tone-${status}`}>{statusLabel}</span>
+      </span>
+      {status !== "unknown" && (
+        <>
+          <span className="band-track" aria-hidden="true">
+            <span className="band-safe" style={{ left: `${bandStart}%`, width: `${bandWidth}%` }} />
+            <span className={`band-marker tone-${status}`} style={{ left: `${marker}%` }} />
+          </span>
+          {band && <span className="gauge-hint">Nyaman {band}</span>}
+        </>
+      )}
     </button>
   );
 }

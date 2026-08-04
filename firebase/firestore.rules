@@ -2,39 +2,116 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function profile() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    function deviceDoc(deviceId) {
+      return get(/databases/$(database)/documents/devices/$(deviceId));
     }
-    function deviceAccount(deviceId) {
-      return signedIn() && profile().role == 'device' && profile().deviceId == deviceId;
+    function isOwner(deviceId) {
+      return signedIn() && deviceDoc(deviceId).data.owner_uid == request.auth.uid;
     }
-    function farmerOwns(deviceId) {
-      return signedIn() && profile().role == 'farmer' && deviceId in profile().devices;
+    function isDevice(deviceId) {
+      return signedIn() && deviceDoc(deviceId).data.device_uid == request.auth.uid;
+    }
+    function validThresholds() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'config_id', 'soil_low', 'soil_high', 'rh_low', 'rh_high',
+          'temperature_influence', 'temp_low', 'temp_high',
+          'humidifier_priority', 'temperature_failure_fallback', 'lux_low',
+          'lux_high', 'light_schedule_enabled', 'light_schedule_start_hour',
+          'light_schedule_end_hour', 'pump_pulse_ms', 'soak_period_ms',
+          'pump_start_limit', 'pump_window_ms', 'planting_date', 'updated_at',
+          'updated_by'
+        ])
+        && d.keys().hasAll([
+          'config_id', 'soil_low', 'soil_high', 'rh_low', 'rh_high',
+          'temperature_influence', 'temp_low', 'temp_high',
+          'humidifier_priority', 'temperature_failure_fallback', 'lux_low',
+          'lux_high', 'light_schedule_enabled', 'light_schedule_start_hour',
+          'light_schedule_end_hour', 'pump_pulse_ms', 'soak_period_ms',
+          'pump_start_limit', 'pump_window_ms', 'planting_date', 'updated_at',
+          'updated_by'
+        ])
+        && d.config_id is string && d.config_id.size() > 0 && d.config_id.size() <= 64
+        && d.soil_low is number && d.soil_high is number
+        && d.soil_low >= 5 && d.soil_high <= 95 && d.soil_low < d.soil_high
+        && d.rh_low is number && d.rh_high is number
+        && d.rh_low >= 20 && d.rh_high <= 95 && d.rh_low < d.rh_high
+        && d.temperature_influence is bool
+        && d.temp_low is number && d.temp_high is number
+        && d.temp_low >= 5 && d.temp_high <= 45 && d.temp_low < d.temp_high
+        && d.humidifier_priority in ['RH', 'TEMPERATURE']
+        && d.temperature_failure_fallback in ['OFF', 'RH_ONLY']
+        && d.lux_low is number && d.lux_high is number
+        && d.lux_low >= 0 && d.lux_high <= 100000 && d.lux_low < d.lux_high
+        && d.light_schedule_enabled is bool
+        && d.light_schedule_start_hour is int && d.light_schedule_start_hour >= 0 && d.light_schedule_start_hour <= 23
+        && d.light_schedule_end_hour is int && d.light_schedule_end_hour >= 0 && d.light_schedule_end_hour <= 23
+        && (!d.light_schedule_enabled || d.light_schedule_start_hour != d.light_schedule_end_hour)
+        && d.pump_pulse_ms is int && d.pump_pulse_ms >= 1000 && d.pump_pulse_ms <= 120000
+        && d.soak_period_ms is int && d.soak_period_ms >= 60000 && d.soak_period_ms <= 7200000
+        && d.pump_pulse_ms < d.soak_period_ms
+        && d.pump_start_limit is int && d.pump_start_limit >= 1 && d.pump_start_limit <= 12
+        && d.pump_window_ms is int && d.pump_window_ms >= 3600000 && d.pump_window_ms <= 86400000
+        && d.planting_date is string && d.planting_date.size() == 10
+        && d.updated_at is number
+        && d.updated_by is string && d.updated_by == request.auth.uid
+        // Local-only fields: soil_adc_dry, soil_adc_wet, gpio, polarity.
+        && !d.keys().hasAny(['soil_adc_dry', 'soil_adc_wet', 'gpio', 'polarity']);
+    }
+    function validCommand() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['command_id', 'actuator', 'mode', 'state',
+          'manual_until', 'issued_at', 'issued_by'])
+        && d.keys().hasAll(['command_id', 'actuator', 'mode', 'state',
+          'manual_until', 'issued_at', 'issued_by'])
+        && d.command_id is string && d.command_id.size() > 0 && d.command_id.size() <= 128
+        && d.actuator in ['growlight', 'pump', 'humidifier']
+        && d.mode in ['AUTO', 'MANUAL']
+        && d.state is bool
+        && d.manual_until is number && d.issued_at is number
+        && d.manual_until >= d.issued_at
+        && (d.actuator == 'pump' || d.mode == 'AUTO' || !d.state || d.manual_until - d.issued_at <= 1800000)
+        && d.issued_by is string && d.issued_by == request.auth.uid;
+    }
+
+    match /devices/{deviceId} {
+      allow read: if isOwner(deviceId) || isDevice(deviceId);
+      allow create, delete: if false; // identity provisioning is Admin SDK only.
+      allow update: if isOwner(deviceId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['greenhouse_name', 'plant_phase']);
+
+      match /config/thresholds {
+        allow read: if isOwner(deviceId) || isDevice(deviceId);
+        allow create, update: if isOwner(deviceId) && validThresholds();
+        allow delete: if false;
+      }
+      match /config/commands {
+        allow read: if isOwner(deviceId) || isDevice(deviceId);
+        allow create, update: if isOwner(deviceId) && validCommand();
+        allow delete: if false;
+      }
+      match /status/realtime {
+        allow read: if isOwner(deviceId) || isDevice(deviceId);
+        allow create, update: if isDevice(deviceId);
+        allow delete: if false;
+      }
+      match /telemetry/{date} {
+        allow read: if isOwner(deviceId) || isDevice(deviceId);
+        allow create, update: if isDevice(deviceId);
+        allow delete: if false;
+      }
     }
 
     match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      allow write: if false;
+      allow read, create, update: if signedIn() && request.auth.uid == uid;
+      allow delete: if false;
+      match /fcm_tokens/{tokenId} {
+        allow read, create, update, delete: if signedIn() && request.auth.uid == uid;
+      }
     }
 
-    match /devices/{deviceId}/status/{document} {
-      allow read: if farmerOwns(deviceId);
-      allow write: if deviceAccount(deviceId);
+    match /{document=**} {
+      allow read, write: if false;
     }
-    match /devices/{deviceId}/telemetry/{document} {
-      allow read: if farmerOwns(deviceId);
-      allow write: if deviceAccount(deviceId);
-    }
-    match /devices/{deviceId}/config/{document} {
-      allow read: if deviceAccount(deviceId) || farmerOwns(deviceId);
-      // Field build remote control is disabled. Config stays immutable until
-      // authenticated command and threshold schema tests are deployed.
-      allow write: if false;
-    }
-    match /devices/{deviceId} {
-      allow read: if farmerOwns(deviceId) || deviceAccount(deviceId);
-      allow write: if false;
-    }
-    match /{document=**} { allow read, write: if false; }
   }
 }

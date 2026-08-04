@@ -25,8 +25,25 @@ export function createMockDataSource(): SnowberryDataSource {
       cb(thresholds);
       return () => thresholdSubs.delete(cb);
     },
-    async loadTelemetry(): Promise<TelemetryPoint[]> {
-      return HISTORY_POINTS;
+    async loadTelemetry(days = 1): Promise<TelemetryPoint[]> {
+      if (days <= 1) return HISTORY_POINTS;
+      // Mock multi-hari: salin pola hari ini mundur ke belakang dengan variasi kecil.
+      const dayMs = 86_400_000;
+      const points: TelemetryPoint[] = [];
+      for (let i = days - 1; i >= 1; i--) {
+        const wobble = ((i * 7) % 5) - 2;
+        points.push(
+          ...HISTORY_POINTS.map((p) => ({
+            ...p,
+            ts: p.ts - i * dayMs,
+            t: +(p.t + wobble * 0.4).toFixed(1),
+            h: Math.min(95, Math.max(35, p.h + wobble)),
+            s: Math.min(90, Math.max(20, p.s - wobble)),
+          })),
+        );
+      }
+      points.push(...HISTORY_POINTS);
+      return points;
     },
     subscribeProfile(cb) {
       profileSubs.add(cb);

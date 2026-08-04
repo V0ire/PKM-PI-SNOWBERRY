@@ -12,5 +12,7 @@ firmware/**/.pio/
 firebase/.runtimeconfig.json
 .codex-cache/
 *.log
+__pycache__/
+*.py[cod]
 firmware/include/measurement_config.local.h
 firmware/include/firebase_config.local.h

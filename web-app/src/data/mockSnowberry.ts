@@ -1,6 +1,7 @@
-import type { ActuatorCopy, ActuatorKey, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
+import type { ActuatorCopy, CommandActuator, RealtimeStatus, TelemetryPoint, ThresholdConfig } from "../types";
 
 export const DEFAULT_THRESHOLDS: ThresholdConfig = {
+  config_id: "demo-config",
   temp_low: 18,
   temp_high: 26,
   rh_low: 60,
@@ -11,11 +12,14 @@ export const DEFAULT_THRESHOLDS: ThresholdConfig = {
   lux_high: 5000,
   pump_pulse_ms: 5000,
   soak_period_ms: 60000,
-  max_pump_cycles_per_hour: 6,
-  max_total_pump_on_ms_per_hour: 30000,
-  light_window_start: 6,
-  light_window_end: 18,
-  max_light_hours_per_day: 14,
+  pump_start_limit: 2,
+  pump_window_ms: 18000000,
+  temperature_influence: false,
+  humidifier_priority: "RH",
+  temperature_failure_fallback: "OFF",
+  light_schedule_enabled: false,
+  light_schedule_start_hour: 6,
+  light_schedule_end_hour: 18,
   planting_date: "2026-06-01",
   updated_at: 1751457600000,
   updated_by: "uid_mock_petani",
@@ -33,8 +37,7 @@ export const INITIAL_STATUS: RealtimeStatus = {
   actuators: {
     growlight: { mode: "AUTO", state: true, manual_until: null, reason: "lux_low" },
     pump: { mode: "AUTO", state: false, manual_until: null, reason: "soil_ok" },
-    mist: { mode: "AUTO", state: false, manual_until: null, reason: "humidity_ok" },
-    fan: { mode: "MANUAL", state: true, manual_until: Date.now() + 26 * 60_000, reason: "manual_override" },
+    humidifier: { mode: "AUTO", state: false, manual_until: null, reason: "humidity_ok" },
   },
   device: {
     online: true,
@@ -61,10 +64,10 @@ export const INITIAL_STATUS: RealtimeStatus = {
   last_seen: Date.now() - 74_000,
 };
 
-export const ACTUATOR_COPY: Record<ActuatorKey, ActuatorCopy> = {
+export const ACTUATOR_COPY: Record<CommandActuator, ActuatorCopy> = {
   growlight: {
     label: "Lampu Tanam",
-    helpingText: "Membantu bunga dan daun tetap mendapat cahaya saat pagi mendung atau sore mulai gelap.",
+    helpingText: "Menambah cahaya saat pagi mendung atau sore gelap.",
     activeText: "Lampu sedang membantu menambah cahaya agar pertumbuhan tidak melemah.",
     automaticText: "Lampu menyala saat cahaya kurang, lalu mati saat cahaya sudah cukup.",
     manualModalTitle: "Ubah Lampu Tanam ke Manual?",
@@ -80,27 +83,19 @@ export const ACTUATOR_COPY: Record<ActuatorKey, ActuatorCopy> = {
     manualModalBody:
       "Pompa tidak akan mengikuti kelembapan media sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
   },
-  mist: {
-    label: "Kabut",
-    helpingText: "Menyemprotkan kabut halus saat udara terlalu kering.",
-    activeText: "Kabut sedang membantu menaikkan kelembapan udara.",
-    automaticText: "Kabut menyala saat udara terlalu kering, lalu mati saat cukup.",
-    manualModalTitle: "Ubah Kabut ke Manual?",
+
+  // Satu alat di mata petani: kabut menaikkan lembap, kipas menurunkan.
+  humidifier: {
+    label: "Pelembap Udara",
+    helpingText: "Menjaga udara tidak terlalu kering dan tidak terlalu lembap.",
+    activeText: "Pelembap sedang menyesuaikan kelembapan udara.",
+    automaticText: "Bekerja sendiri saat kelembapan keluar batas.",
+    manualModalTitle: "Ubah Pelembap Udara ke Manual?",
     manualModalBody:
-      "Kabut tidak akan mengikuti kelembapan udara sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
-  },
-  fan: {
-    label: "Kipas",
-    helpingText: "Membantu sirkulasi udara dan membuang lembap berlebih.",
-    activeText: "Kipas sedang membantu menjaga udara tetap bergerak.",
-    automaticText: "Kipas menyala saat suhu atau kelembapan udara terlalu tinggi.",
-    manualModalTitle: "Ubah Kipas ke Manual?",
-    manualModalBody:
-      "Kipas tidak akan mengikuti suhu dan kelembapan udara sementara. Sistem akan kembali otomatis setelah 30 menit. Pilih Batal jika ingin tetap otomatis.",
+      "Pelembap tidak mengikuti Batas Otomatis sementara. Kembali otomatis setelah maksimal 30 menit.",
   },
 };
 
-export const ACTUATOR_ORDER: ActuatorKey[] = ["growlight", "pump", "mist", "fan"];
 
 export const HISTORY_POINTS: TelemetryPoint[] = [
   { t: 20.8, h: 72, l: 920, s: 58, gl: true, p: false, m: false, f: false, ts: 1751414400000 },

@@ -9,8 +9,7 @@ import { StatusPill } from "./StatusPill";
 const ACTUATOR_ICON = {
   growlight: Lightbulb,
   pump: Sprout,
-  mist: Droplets,
-  fan: Fan,
+  humidifier: Droplets,
 };
 
 export function ActuatorCard({

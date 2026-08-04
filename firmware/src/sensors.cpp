@@ -5,17 +5,17 @@
 #include <BH1750.h>
 #include "config.h"
 #include "control.h"
-#include "sensor_health.h"
 
 namespace {
 Adafruit_SHT31 g_sht;
-BH1750 g_bh;
+BH1750 g_bh(i2c_addr::BH1750);
 bool g_shtOk = false;
 bool g_bhOk = false;
 uint8_t g_shtFails = 0;
 uint8_t g_bhFails = 0;
-sensor_health::StuckDetector g_bhStuck;
-
+uint32_t g_lastShtSuccessMs = 0;
+uint32_t g_lastBhSuccessMs = 0;
+uint32_t g_lastSoilSuccessMs = 0;
 }  // namespace
 
 namespace sensors {
@@ -23,10 +23,8 @@ namespace sensors {
 bool begin() {
   Wire.begin(pins::I2C_SDA, pins::I2C_SCL);
   Wire.setClock(100000);
-  delay(100);  // Beri waktu hardware bus stabil
   analogReadResolution(12);
   analogSetPinAttenuation(pins::SOIL_ADC, ADC_11db);
-
 
   g_shtOk = g_sht.begin(i2c_addr::SHT30);
   g_bhOk = g_bh.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, i2c_addr::BH1750);
@@ -51,23 +49,37 @@ void read(const Thresholds& t, SensorReading& out, Fault& sensorFault, uint32_t 
   // --- SHT30 ---
   float temp = g_shtOk ? g_sht.readTemperature() : NAN;
   float rh = g_shtOk ? g_sht.readHumidity() : NAN;
-  if (!isnan(temp) && !isnan(rh) && temp >= -20 && temp <= 60 && rh >= 0 && rh <= 100) {
-    out.temperature_c = temp; out.humidity_pct = rh;
-    out.temp_valid = true; out.rh_valid = true;
-    out.temp_updated_ms = out.rh_updated_ms = nowMs;
+  if (!isnan(temp) && !isnan(rh) && temp >= -10.0f && temp <= 60.0f && rh >= 0.0f && rh <= 100.0f) {
+    out.temperature_c = temp;
+    out.humidity_pct = rh;
+    out.temp_valid = true;
+    out.rh_valid = true;
     g_shtFails = 0;
+    g_lastShtSuccessMs = nowMs;
+    out.temp_rh_at_ms = nowMs;
   } else {
-    out.temp_valid = false; out.rh_valid = false;
-    if (++g_shtFails >= timing::SENSOR_FAIL_THRESHOLD) sensorFault = Fault::SHT30_ERROR;
+    if (nowMs - g_lastShtSuccessMs > timing::SENSOR_STALE_MS) {
+      out.temp_valid = false;
+      out.rh_valid = false;
+    }
+    if (g_shtFails < UINT8_MAX) g_shtFails++;
+    if (g_shtFails >= timing::SENSOR_FAIL_THRESHOLD) sensorFault = Fault::SHT30_ERROR;
   }
 
   // --- BH1750 ---
   float lux = g_bhOk ? g_bh.readLightLevel() : -1.0f;
-  if (lux >= 0 && lux <= 120000 && g_bhStuck.update(lux,nowMs)) {
-    out.lux = lux; out.lux_valid = true; out.lux_updated_ms=nowMs; g_bhFails = 0;
+  if (lux >= 0.0f && lux <= 120000.0f) {
+    out.lux = lux;
+    out.lux_valid = true;
+    g_bhFails = 0;
+    g_lastBhSuccessMs = nowMs;
+    out.lux_at_ms = nowMs;
   } else {
-    out.lux_valid = false;
-    if (++g_bhFails >= timing::SENSOR_FAIL_THRESHOLD && sensorFault == Fault::NONE)
+    if (nowMs - g_lastBhSuccessMs > timing::SENSOR_STALE_MS) {
+      out.lux_valid = false;
+    }
+    if (g_bhFails < UINT8_MAX) g_bhFails++;
+    if (g_bhFails >= timing::SENSOR_FAIL_THRESHOLD && sensorFault == Fault::NONE)
       sensorFault = Fault::BH1750_ERROR;
   }
 
@@ -84,9 +96,14 @@ void read(const Thresholds& t, SensorReading& out, Fault& sensorFault, uint32_t 
   out.soil_raw_adc = static_cast<uint16_t>(acc / 8);
   float pct;
   if (control::soilPercent(t, out.soil_raw_adc, pct)) {
-    out.soil_pct = pct; out.soil_valid = true; out.soil_updated_ms=nowMs;
+    out.soil_pct = pct;
+    out.soil_valid = true;
+    g_lastSoilSuccessMs = nowMs;
+    out.soil_at_ms = nowMs;
   } else {
-    out.soil_valid = false;
+    if (nowMs - g_lastSoilSuccessMs > timing::SENSOR_STALE_MS) {
+      out.soil_valid = false;
+    }
     if (t.soil_adc_dry == 0 || t.soil_adc_wet == 0) {
       if (sensorFault == Fault::NONE) sensorFault = Fault::SOIL_CALIBRATION_MISSING;
     } else if (sensorFault == Fault::NONE) {
@@ -94,8 +111,8 @@ void read(const Thresholds& t, SensorReading& out, Fault& sensorFault, uint32_t 
     }
   }
 
-  // GPIO35 tidak dipakai di Rev B. Jangan buat fault dari input floating.
-  out.psu_voltage = 0;
+  // --- PSU 12V rail (Rev B: unused/unwired, set psu_voltage=0 and psu_valid=false to avoid false truth) ---
+  out.psu_voltage = 0.0f;
   out.psu_valid = false;
 }
 

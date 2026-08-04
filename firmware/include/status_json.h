@@ -14,7 +14,13 @@ size_t buildStatus(char* buf, size_t cap,
                    bool online,
                    int rssi,
                    bool timeSynced,
-                   int64_t lastSeenEpochMs);
+                   int64_t lastSeenEpochMs,
+                   const char* appliedConfigId,
+                   uint32_t uptimeSeconds,
+                   const control::ManualCommand& manual,
+                   const control::TimeCtx& time,
+                   uint32_t nowMs,
+                   CalibrationSource calibrationSource);
 
 // Bangun 1 sample telemetry ringkas.
 size_t buildTelemetrySample(char* buf, size_t cap,

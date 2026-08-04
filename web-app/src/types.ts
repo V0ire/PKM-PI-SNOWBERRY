@@ -1,4 +1,4 @@
-export type Page = "dashboard" | "plants" | "tools" | "history" | "check";
+export type Page = "dashboard" | "plants" | "tools" | "history" | "check" | "settings" | "edu" | "sensor";
 
 export type ConnectionState = "online" | "stale" | "offline";
 export type SensorStatusKey = "safe" | "warning" | "danger" | "unknown";
@@ -6,7 +6,8 @@ export type ActuatorAvailability = "ready" | "offline_disabled" | "sending" | "e
 export type FormState = "clean" | "dirty" | "invalid" | "saving" | "saved" | "error";
 export type GrowthPhaseKey = "vegetative" | "flowering" | "fruiting";
 
-export type ActuatorKey = "growlight" | "pump" | "mist" | "fan";
+export type ActuatorKey = "growlight" | "pump" | "humidifier";
+export type CommandActuator = ActuatorKey;
 export type ActuatorMode = "AUTO" | "MANUAL";
 export type PlantPhase = "vegetatif" | "berbunga" | "buah";
 
@@ -16,6 +17,7 @@ export type GreenhouseProfile = {
 };
 
 export type ThresholdConfig = {
+  config_id: string;
   temp_low: number;
   temp_high: number;
   rh_low: number;
@@ -26,11 +28,14 @@ export type ThresholdConfig = {
   lux_high: number;
   pump_pulse_ms: number;
   soak_period_ms: number;
-  max_pump_cycles_per_hour?: number;
-  max_total_pump_on_ms_per_hour?: number;
-  light_window_start?: number;
-  light_window_end?: number;
-  max_light_hours_per_day?: number;
+  pump_start_limit: number;
+  pump_window_ms: number;
+  temperature_influence: boolean;
+  humidifier_priority: "RH" | "TEMPERATURE";
+  temperature_failure_fallback: "OFF" | "RH_ONLY";
+  light_schedule_enabled: boolean;
+  light_schedule_start_hour: number;
+  light_schedule_end_hour: number;
   planting_date: string;
   updated_at: number;
   updated_by: string;
@@ -76,6 +81,7 @@ export type RealtimeStatus = {
     last_fault_code?: string | null;
     last_fault_at?: number | null;
   };
+  applied_config_id?: string;
   last_seen: number;
 };
 

@@ -9,6 +9,7 @@ import type {
   RealtimeStatus,
   SensorMetric,
   SensorStatusKey,
+  TelemetryPoint,
   ThresholdConfig,
 } from "../types";
 import { daysAfterPlanting, formatDecimal, formatInteger, formatTimeAgo } from "./date";
@@ -127,6 +128,63 @@ export function getConnectionState(status: RealtimeStatus, now: number): Connect
   return "online";
 }
 
+// Satu aturan pelanggaran batas untuk seluruh aplikasi: Beranda, Riwayat, dan grafik
+// harus memakai fungsi ini agar tidak pernah memberi kesimpulan berbeda pada data sama.
+// Selalu dipanggil dengan data MENTAH — rata-rata bucket menyembunyikan lonjakan pendek.
+export function isPointOutsideLimits(point: TelemetryPoint, thresholds: ThresholdConfig): boolean {
+  return (
+    point.h < thresholds.rh_low ||
+    point.h > thresholds.rh_high ||
+    point.s < thresholds.soil_low ||
+    point.s > thresholds.soil_high ||
+    point.t < thresholds.temp_low ||
+    point.t > thresholds.temp_high
+  );
+}
+
+export type BreachEvent = { count: number; longestMinutes: number; worstAt: number | null };
+
+// Kelompokkan titik berurutan yang keluar batas menjadi satu kejadian.
+// Petani peduli "berapa kali dan berapa lama", bukan "berapa pembacaan".
+export function summarizeBreaches(
+  points: TelemetryPoint[],
+  outside: (point: TelemetryPoint) => boolean,
+): BreachEvent {
+  let count = 0;
+  let longestMs = 0;
+  let worstAt: number | null = null;
+  let startTs: number | null = null;
+  let previousTs: number | null = null;
+
+  for (const point of points) {
+    if (outside(point)) {
+      if (startTs === null) {
+        startTs = point.ts;
+        count += 1;
+      }
+      previousTs = point.ts;
+    } else if (startTs !== null && previousTs !== null) {
+      const durationMs = previousTs - startTs;
+      if (durationMs >= longestMs) {
+        longestMs = durationMs;
+        worstAt = startTs;
+      }
+      startTs = null;
+      previousTs = null;
+    }
+  }
+
+  if (startTs !== null && previousTs !== null) {
+    const durationMs = previousTs - startTs;
+    if (durationMs >= longestMs) {
+      longestMs = durationMs;
+      worstAt = startTs;
+    }
+  }
+
+  return { count, longestMinutes: Math.round(longestMs / 60_000), worstAt };
+}
+
 export function getGrowthPhaseInfo(plantingDate: string, now = Date.now()): CropPhaseInfo {
   const hst = daysAfterPlanting(plantingDate, now);
 
@@ -135,10 +193,11 @@ export function getGrowthPhaseInfo(plantingDate: string, now = Date.now()): Crop
       key: "vegetative",
       hst,
       name: "Vegetatif",
-      title: `Fase Vegetatif - Hari ke-${hst} setelah tanam`,
+      // Judul = satu manfaat, bukan ulangan eyebrow (fase + umur sudah di sana).
+      title: "Akar kuat menentukan hasil nanti.",
       shortTitle: `Fase Vegetatif - Hari ke-${hst}`,
       description: "Tanaman sedang memperkuat akar, daun, dan crown sebelum masuk masa bunga.",
-      focus: "Fokus hari ini: media lembap stabil, daun sehat, dan akar tidak tergenang.",
+      focus: "Media lembap stabil dan akar tidak tergenang.",
       risk: "Media terlalu basah dapat membuat akar mudah busuk, terutama jika udara ikut lembap.",
       action: "Cek daun rusak dan pastikan penyiraman tetap bertahap.",
       targets: {
@@ -155,11 +214,11 @@ export function getGrowthPhaseInfo(plantingDate: string, now = Date.now()): Crop
       key: "flowering",
       hst,
       name: "Berbunga",
-      title: `Fase Berbunga - Hari ke-${hst} setelah tanam`,
+      title: "Bunga menentukan jumlah buah.",
       shortTitle: `Fase Berbunga - Hari ke-${hst}`,
       description: "Tanaman mulai membentuk bunga. Kelembapan dan cahaya perlu lebih dijaga.",
-      focus: "Fokus hari ini: udara tidak terlalu lembap agar penyerbukan tidak terganggu.",
-      risk: "Kelembapan tinggi dapat membuat serbuk sari menggumpal dan meningkatkan risiko jamur pada bunga.",
+      focus: "Jaga udara tidak lembap agar penyerbukan lancar.",
+      risk: "Udara lembap membuat serbuk sari menggumpal.",
       action: "Pantau kelembapan malam dan bantu sirkulasi udara saat bunga mulai banyak.",
       targets: {
         "Suhu siang": "18-22 °C",
@@ -174,11 +233,11 @@ export function getGrowthPhaseInfo(plantingDate: string, now = Date.now()): Crop
     key: "fruiting",
     hst,
     name: "Berbuah",
-    title: `Fase Berbuah - Hari ke-${hst} setelah tanam`,
+    title: "Buah matang butuh udara kering.",
     shortTitle: `Fase Berbuah - Hari ke-${hst}`,
     description: "Buah mulai membesar. Media perlu stabil agar buah tidak pecah atau terlalu berair.",
-    focus: "Fokus hari ini: media tidak terlalu basah dan udara cukup kering untuk mencegah jamur buah.",
-    risk: "Media terlalu basah dapat membuat buah pecah, sedangkan udara lembap memudahkan jamur berkembang.",
+    focus: "Media tidak becek dan udara tidak lembap.",
+    risk: "Media terlalu basah dapat membuat buah pecah. Udara lembap juga memudahkan jamur berkembang.",
     action: "Panen buah matang, buang buah rusak, dan hindari penyiraman berlebih.",
     targets: {
         "Suhu siang": "18-22 °C",
@@ -371,7 +430,7 @@ function phaseSensitivityText(phaseKey: GrowthPhaseKey) {
     return "Fase berbunga lebih sensitif terhadap kelembapan tinggi dan cahaya kurang.";
   }
   if (phaseKey === "fruiting") {
-    return "Fase berbuah perlu media stabil agar buah tidak pecah dan tidak mudah berjamur.";
+    return "Fase berbuah perlu media stabil. Kondisi ini membantu mencegah buah pecah dan jamur.";
   }
   return "Fase vegetatif perlu media lembap stabil agar akar dan daun kuat.";
 }

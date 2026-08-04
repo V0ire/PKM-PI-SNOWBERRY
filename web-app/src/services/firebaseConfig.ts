@@ -1,5 +1,5 @@
 // Konfigurasi Firebase dibaca dari environment (Vite). Tidak ada secret di repo.
-// Jika env belum diisi, web-app otomatis memakai data mock (lihat dataSource.ts).
+// Demo mock hanya aktif eksplisit lewat VITE_SNOWBERRY_DEMO=true saat development.
 //
 // Isi lewat web-app/.env.local (JANGAN commit):
 //   VITE_FIREBASE_API_KEY=...

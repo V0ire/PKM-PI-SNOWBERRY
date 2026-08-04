@@ -6,17 +6,22 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "tsx src/utils/thresholdDiff.check.ts && tsx src/utils/downsample.check.ts && tsx src/utils/status.check.ts && tsx src/utils/gaugeScale.check.ts && tsx src/utils/validateThresholds.check.ts && tsx src/services/normalizeFirestore.check.ts && tsx src/services/commandPayload.check.ts",
+    "qa": "tsx scripts/qa-history.ts && tsx scripts/qa-facts.ts && tsx scripts/qa-contrast.ts && tsx scripts/qa-pwa.ts && tsx scripts/qa-density.ts",
+    "icons": "tsx scripts/make-icons.ts"
   },
   "dependencies": {
+    "firebase": "^11.0.0",
     "lucide-react": "^1.23.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "firebase": "^11.0.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "playwright": "^1.62.0",
+    "tsx": "^4.23.5",
     "typescript": "^5.8.0",
     "vite": "^7.0.0"
   }

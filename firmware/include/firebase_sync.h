@@ -1,5 +1,5 @@
 #pragma once
-#include <stddef.h>
+#include <cstddef>
 #include "control.h"
 #include "types.h"
 
@@ -15,26 +15,19 @@
 namespace fbsync {
 
 struct Config {
-  const char* wifi_ssid;
-  const char* wifi_pass;
-  const char* device_email;   // akun device (dari NVS, bukan hardcode)
-  const char* device_pass;
-  const char* api_key;
-  const char* project_id;
-  const char* device_id;
+  // Nilai nullptr dimuat dari namespace NVS `firebase`. Gunakan local_secrets.h
+  // yang diabaikan Git hanya untuk provisioning awal; jangan hardcode secret.
+  const char* wifi_ssid = nullptr;
+  const char* wifi_pass = nullptr;
+  const char* device_email = nullptr;
+  const char* device_pass = nullptr;
+  const char* api_key = nullptr;
+  const char* project_id = nullptr;
+  const char* device_id = nullptr;
   uint32_t status_interval_ms = 60000;
   uint32_t telemetry_interval_ms = 60000;
   uint32_t command_poll_ms = 10000;
   uint32_t threshold_poll_ms = 60000;
-};
-
-struct Diagnostics {
-  bool wifi_connected = false;
-  bool firebase_authenticated = false;
-  bool ntp_synced = false;
-  uint32_t wifi_attempts = 0;
-  uint32_t network_operations = 0;
-  uint32_t network_failures = 0;
 };
 
 void begin(const Config& cfg);
@@ -58,9 +51,5 @@ void publishAck(const char* commandId, const char* ackStatus, const char* ackMes
 
 // Tambah 1 sample telemetry (buffer RAM, flush per interval).
 void appendTelemetry(const char* sampleJson, uint32_t nowMs);
-
-// Tulis langsung sensor ke status/realtime untuk demo.
-void updateLiveSensors(const SensorReading& s, Fault fault, uint32_t nowMs);
-Diagnostics diagnostics();
 
 }  // namespace fbsync
