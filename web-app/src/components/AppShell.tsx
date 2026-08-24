@@ -8,17 +8,21 @@ export function AppShell({
   connection,
   toast,
   onPageChange,
+  accountEmail,
+  onSignOut,
   children,
 }: {
   page: Page;
   connection: ConnectionState;
   toast: string;
   onPageChange: (page: Page) => void;
+  accountEmail: string | null;
+  onSignOut: () => void;
   children: ReactNode;
 }) {
   return (
     <div className="app-shell">
-      <TopBar connection={connection} />
+      <TopBar connection={connection} accountEmail={accountEmail} onSignOut={onSignOut} />
       <main>{children}</main>
       {page !== "check" && <BottomNav page={page} onChange={onPageChange} />}
       {toast && <div className="toast">{toast}</div>}

@@ -11,7 +11,7 @@
     "lux_low": 2000, "lux_high": 5000,
     "pump_pulse_ms": 3000, "soak_period_ms": 30000,
     "max_pump_cycles_per_hour": 6, "max_total_pump_on_ms_per_hour": 30000,
-    "light_window_start": 6, "light_window_end": 18, "max_light_hours_per_day": 14,
+    "light_window_start": 18, "light_window_end": 20, "max_light_hours_per_day": 2,
     "updated_at": 0, "updated_by": "seed"
   },
   "devices/snowberry-001/status/realtime": {

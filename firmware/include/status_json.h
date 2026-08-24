@@ -16,10 +16,9 @@ size_t buildStatus(char* buf, size_t cap,
                    bool timeSynced,
                    int64_t lastSeenEpochMs);
 
-// Bangun 1 sample telemetry ringkas.
+// Bangun 1 sample telemetry ringkas sesuai api-contract §5:
+// {"t":num,"h":num,"l":num,"s":num,"gl":bool,"p":bool,"m":bool,"f":bool,"ts":epochMs}
 size_t buildTelemetrySample(char* buf, size_t cap,
-                            const char* hhmm,
-                            const SensorReading& s,
-                            Fault fault);
+                            int64_t tsEpochMs, const SensorReading& s);
 
 }  // namespace status_json

@@ -13,9 +13,12 @@ export const DEFAULT_THRESHOLDS = {
   soak_period_ms: 30000,
   max_pump_cycles_per_hour: 6,
   max_total_pump_on_ms_per_hour: 30000,
-  light_window_start: 6,
-  light_window_end: 18,
-  max_light_hours_per_day: 14,
+  light_window_start: 18,
+  light_window_end: 20,
+  max_light_hours_per_day: 2,
+  // Jendela siram otomatis sore (WIB). Selaras firmware schedule::WATER_WINDOW_*.
+  water_window_start: 15,
+  water_window_end: 18,
   planting_date: "2026-06-01",
   updated_at: 0,
   updated_by: "simulator",
@@ -56,9 +59,18 @@ export function evaluateAuto(sensors, thresholds, previousActuators, nowMs, time
   const tooHot = sensors.temperature_c >= thresholds.temp_high;
   setActuator(actuators.mist, wantsMist && !tooHot, wantsMist && tooHot ? "temp_high" : wantsMist ? "humidity_low" : "humidity_ok");
 
-  setActuator(actuators.pump, sensors.soil_pct <= thresholds.soil_low, sensors.soil_pct <= thresholds.soil_low ? "soil_low" : "soil_ok");
+  // Siram otomatis hanya jendela sore 15:00-18:00 WIB; tanpa waktu sinkron
+  // tidak ada auto siram (selalu konservatif, selaras firmware).
+  const inWaterWindow = timeSynced && localHour >= thresholds.water_window_start &&
+    localHour < thresholds.water_window_end;
+  const soilDry = sensors.soil_pct <= thresholds.soil_low;
+  setActuator(actuators.pump, inWaterWindow && soilDry,
+    inWaterWindow && soilDry ? "soil_low" : soilDry ? "water_window_wait" : "soil_ok");
 
-  const inWindow = timeSynced ? localHour >= thresholds.light_window_start && localHour < thresholds.light_window_end : true;
+  // Tanpa waktu sinkron, lampu tidak boleh menyala otomatis (selaras
+  // firmware control.cpp: PHOTOPERIOD_LIMIT saat !synced).
+  const inWindow = timeSynced && localHour >= thresholds.light_window_start &&
+    localHour < thresholds.light_window_end;
   setActuator(actuators.growlight, inWindow && sensors.lux <= thresholds.lux_low, inWindow && sensors.lux <= thresholds.lux_low ? "lux_low" : "lux_ok");
   return actuators;
 }

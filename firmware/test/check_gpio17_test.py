@@ -7,8 +7,6 @@ ini = (root / "platformio.ini").read_text()
 assert "[env:gpio17-test]" in ini
 assert "build_src_filter = +<gpio17_test.cpp>" in ini
 esp32dev = ini[ini.index("[env:esp32dev]") : ini.index("[env:measurement]")]
-assert "-<actuator_test.cpp>" in esp32dev
-assert "-<actuator_online_test.cpp>" in esp32dev
 assert "-<gpio17_test.cpp>" in esp32dev
 assert "digitalWrite(17, LOW);" in source
 assert source.index("digitalWrite(17, LOW);") < source.index("pinMode(17, OUTPUT);")

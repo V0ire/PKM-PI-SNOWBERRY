@@ -58,17 +58,18 @@ size_t buildStatus(char* buf, size_t cap,
   return (size_t)n;
 }
 
-size_t buildTelemetrySample(char* buf, size_t cap, const char* hhmm,
-                            const SensorReading& s, Fault fault) {
+size_t buildTelemetrySample(char* buf, size_t cap,
+                            int64_t tsEpochMs, const SensorReading& s) {
+  // Format persis api-contract §5 (minified, dibaca web-app).
   int n = snprintf(buf, cap,
-    "{\"t\":\"%s\",\"tc\":%.1f,\"rh\":%.1f,\"lx\":%.0f,\"sl\":%.1f,\"pv\":%.2f,"
-    "\"g\":%s,\"p\":%s,\"m\":%s,\"f\":%s,\"fc\":\"%s\"}",
-    hhmm, s.temperature_c, s.humidity_pct, s.lux, s.soil_pct, s.psu_voltage,
+    "{\"t\":%.1f,\"h\":%.1f,\"l\":%.0f,\"s\":%.1f,"
+    "\"gl\":%s,\"p\":%s,\"m\":%s,\"f\":%s,\"ts\":%lld}",
+    s.temperature_c, s.humidity_pct, s.lux, s.soil_pct,
     actuators::isOn(ActuatorKey::GROWLIGHT) ? "true" : "false",
     actuators::isOn(ActuatorKey::PUMP) ? "true" : "false",
     actuators::isOn(ActuatorKey::MIST) ? "true" : "false",
     actuators::isOn(ActuatorKey::FAN) ? "true" : "false",
-    faultCode(fault));
+    static_cast<long long>(tsEpochMs));
   if (n < 0 || (size_t)n >= cap) return 0;
   return (size_t)n;
 }

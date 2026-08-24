@@ -1,0 +1,4 @@
+.pio/
+test/__pycache__/
+include/firebase_config.local.h
+include/measurement_config.local.h

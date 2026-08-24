@@ -27,6 +27,7 @@ const char* faultMessage(Fault f);   // pesan Bahasa Indonesia untuk petani
 enum class ActuatorKey : uint8_t {
   GROWLIGHT = 0, PUMP, MIST, FAN, MIST_2, FAN_2, COUNT
 };
+enum class ManualTarget : uint8_t { GROWLIGHT = 0, PUMP, HUMIDIFIER, UNKNOWN };
 enum class Mode : uint8_t { AUTO = 0, MANUAL };
 
 // Alasan aktuator ON/OFF, dipetakan ke field `reason` di Firestore.
@@ -39,6 +40,7 @@ enum class Reason : uint8_t {
   SENSOR_INVALID,
   CONFIG_INVALID_REASON,
   PHOTOPERIOD_LIMIT,
+  WATER_WINDOW_WAIT,
   SAFETY_OFF,
 };
 const char* reasonStr(Reason r);
@@ -53,17 +55,17 @@ struct Thresholds {
   float soil_high = 60.0f;
   float lux_low = 2000.0f;
   float lux_high = 5000.0f;
-  uint32_t pump_pulse_ms = 10000;
-  uint32_t soak_period_ms = 600000;
+  uint32_t pump_pulse_ms = 45000;
+  uint32_t soak_period_ms = 900000;
   uint16_t pump_start_limit = 2;
   uint32_t pump_window_ms = 18000000;
-  uint8_t light_window_start = 6;      // jam 06:00 boleh growlight
-  uint8_t light_window_end = 18;       // sampai 18:00
-  float max_light_hours_per_day = 14;  // batas DLI kasar untuk stroberi
+  uint8_t light_window_start = 18;     // lampu otomatis hanya 18:00-20:00 WIB
+  uint8_t light_window_end = 20;
+  float max_light_hours_per_day = 2;
 
   // Kalibrasi soil (raw ADC), disimpan per unit.
-  uint16_t soil_adc_dry = 0;
-  uint16_t soil_adc_wet = 0;
+  uint16_t soil_adc_dry = 3500;
+  uint16_t soil_adc_wet = 1500;
 };
 
 struct SensorReading {
@@ -79,11 +81,9 @@ struct SensorReading {
   bool lux_valid = false;
   bool soil_valid = false;   // false jika belum kalibrasi atau ADC pinned
   bool psu_valid = false;
-
-  uint32_t temp_updated_ms = 0;
-  uint32_t rh_updated_ms = 0;
-  uint32_t lux_updated_ms = 0;
-  uint32_t soil_updated_ms = 0;
+  uint32_t rh_sample_ms = 0;
+  uint32_t lux_sample_ms = 0;
+  uint32_t soil_sample_ms = 0;
 };
 
 struct ActuatorState {

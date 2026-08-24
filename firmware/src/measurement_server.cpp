@@ -173,17 +173,7 @@ void beginWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(MEASUREMENT_HOSTNAME);
   WiFi.begin(MEASUREMENT_WIFI_SSID, MEASUREMENT_WIFI_PASSWORD);
-  Serial.printf("[measurement] Connecting WiFi SSID=%s", MEASUREMENT_WIFI_SSID);
-  for (uint8_t i = 0; i < 20 && WiFi.status() != WL_CONNECTED; i++) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("[measurement] Open API from laptop/phone: http://%s/\n", WiFi.localIP().toString().c_str());
-  } else {
-    Serial.println("[measurement] WiFi not connected yet. Will retry in loop.");
-  }
+  Serial.printf("[measurement] Connecting WiFi SSID=%s without blocking\n", MEASUREMENT_WIFI_SSID);
 }
 }  // namespace
 

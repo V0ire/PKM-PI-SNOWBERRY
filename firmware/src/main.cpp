@@ -1,218 +1,210 @@
-// ============================================================================
-// Snowberry Smart Greenhouse — ESP32 firmware (local-first)
-//
-// Tahap ini: kontrol lokal penuh tanpa WiFi/Firebase. Semua keputusan
-// aktuator dibuat di ESP32 memakai threshold dari NVS.
-//
-// Decision priority (control::step):
-//   boot safe-state > fault/safety OFF > sensor invalid > manual > auto > OFF
-//
-// Integrasi Firebase (login device, publish status/telemetry, baca command)
-// ditambahkan pada tahap berikutnya — lihat firmware/README.md.
-// ============================================================================
 #include <Arduino.h>
+#include <esp_system.h>
+#include <WiFi.h>
 #include "actuators.h"
+#include "calibration.h"
 #include "config.h"
 #include "control.h"
+#ifndef SNOWBERRY_MEASUREMENT_MODE
+#include "manual_control.h"
+#endif
 #ifdef SNOWBERRY_MEASUREMENT_MODE
 #include "measurement_server.h"
+#else
+#include "network_worker.h"
 #endif
 #include "sensors.h"
 #include "storage.h"
 #include "types.h"
-#include "firebase_sync.h"
-#include <esp_system.h>
+
+RTC_DATA_ATTR uint32_t g_bootCount = 0;
 
 namespace {
+enum class InitStage : uint8_t { GPIO_SAFE, STORAGE, SENSORS, NETWORK, RUNNING };
+InitStage g_initStage = InitStage::GPIO_SAFE;
 Thresholds g_thresholds;
 SensorReading g_sensor;
-control::ManualCommand g_manual;   // diisi oleh layer Firebase nanti
-control::TimeCtx g_time;           // diisi oleh NTP nanti
+control::ManualCommand g_manual;
+control::TimeCtx g_time;
+calibration::Machine g_calibration;
 Fault g_activeFault = Fault::NONE;
+uint32_t g_lastSensor;
+uint32_t g_lastControl;
+uint32_t g_lastReport;
+uint32_t g_lastPublish;
+uint32_t g_lastLoop;
+uint32_t g_maxLoopLatency;
+uint32_t g_deadlineOverruns;
+uint32_t g_minFreeHeap = UINT32_MAX;
+bool g_lastButton;
+uint32_t g_buttonPressedAt;
+#ifndef SNOWBERRY_MEASUREMENT_MODE
+bool g_pumpHistoryRestored;
+#endif
 
-uint32_t g_lastSensor = 0;
-uint32_t g_lastControl = 0;
-uint32_t g_lastReport = 0;
-uint32_t g_lastHeartbeat = 0;
-uint32_t g_maxLoopUs = 0;
-uint32_t g_minHeap = UINT32_MAX;
-uint32_t g_bootCount = 0;
-bool g_pendingCommandAck = false;
-char g_pendingCommandId[64] = "";
-
-void logStatus(uint32_t nowMs) {
-  Serial.printf("[%lus] T=%.1f RH=%.1f Lux=%.0f Soil=%.1f(%u) PSU=%.2f | ",
-                nowMs / 1000,
-                g_sensor.temperature_c, g_sensor.humidity_pct, g_sensor.lux,
-                g_sensor.soil_pct, g_sensor.soil_raw_adc, g_sensor.psu_voltage);
-  Serial.printf("GL=%d P=%d M=%d F=%d | fault=%s\n",
-                actuators::isOn(ActuatorKey::GROWLIGHT),
-                actuators::isOn(ActuatorKey::PUMP),
-                actuators::isOn(ActuatorKey::MIST),
-                actuators::isOn(ActuatorKey::FAN),
-                faultCode(g_activeFault));
-  const auto d=fbsync::diagnostics();
-  Serial.printf("[diag] reset=%d boot=%lu loop_max_us=%lu heap_min=%lu wifi=%d ntp=%d auth=%d net_ops=%lu net_fail=%lu\n",
-                static_cast<int>(esp_reset_reason()),g_bootCount,g_maxLoopUs,g_minHeap,
-                d.wifi_connected,d.ntp_synced,d.firebase_authenticated,
-                d.network_operations,d.network_failures);
+void forceAllOff(uint32_t now) {
+  actuators::forceOff(ActuatorKey::GROWLIGHT, now);
+  actuators::forceOff(ActuatorKey::PUMP, now);
+  actuators::forceOffHumidifierGroup(now);
 }
 
-bool waitButton(uint8_t level,uint32_t deadline) {
-  while (digitalRead(pins::BUTTON)==level) {
-    if (static_cast<int32_t>(millis()-deadline)>=0) return false;
-    delay(10);
+void runCalibration(uint32_t now) {
+  const bool pressed = digitalRead(pins::BUTTON) == LOW;
+  if (pressed && !g_lastButton) g_buttonPressedAt = now;
+  if (pressed && g_calibration.active() && now - g_buttonPressedAt >= 3000) {
+    g_calibration.cancel();
+    g_lastButton = pressed;
+    return;
   }
-  return true;
+  if (pressed && !g_lastButton && !g_calibration.active()) g_calibration.start(now);
+  g_lastButton = pressed;
+  if (!g_calibration.active()) return;
+  forceAllOff(now);
+  g_calibration.step(pressed, now, static_cast<uint16_t>(analogRead(pins::SOIL_ADC)));
+  uint16_t dry, wet;
+  if (g_calibration.takeResult(dry, wet) && storage::saveSoilCalibration(dry, wet)) {
+    g_thresholds.soil_adc_dry = dry;
+    g_thresholds.soil_adc_wet = wet;
+  }
 }
 
-// Kalibrasi soil via tombol: tekan saat kering -> lepas -> tekan saat basah.
-void runSoilCalibration() {
-  const uint32_t now = millis();
-  for (uint8_t i = 0; i < static_cast<uint8_t>(ActuatorKey::COUNT); ++i) {
-    actuators::forceOff(static_cast<ActuatorKey>(i), now);
-  }
-  Serial.println(">> Kalibrasi: semua aktuator OFF.");
-  Serial.println(">> Kalibrasi soil: pastikan sensor di media KERING, tekan tombol lagi...");
-  uint32_t deadline=millis()+timing::CALIBRATION_TIMEOUT_MS;
-  if (!waitButton(LOW,deadline) || !waitButton(HIGH,deadline)) return;
-  delay(50);
-  uint32_t acc = 0;
-  for (int i = 0; i < 32; i++) { acc += analogRead(pins::SOIL_ADC); delay(5); }
-  uint16_t dry = acc / 32;
-  Serial.printf(">> ADC kering = %u. Basahi media, lalu tekan tombol...\n", dry);
-  deadline=millis()+timing::CALIBRATION_TIMEOUT_MS;
-  if (!waitButton(LOW,deadline) || !waitButton(HIGH,deadline)) return;
-  delay(50);
-  acc = 0;
-  for (int i = 0; i < 32; i++) { acc += analogRead(pins::SOIL_ADC); delay(5); }
-  uint16_t wet = acc / 32;
-  Serial.printf(">> ADC basah = %u.\n", wet);
-  if (dry > wet && (dry - wet) > 100) {
-    if (storage::saveSoilCalibration(dry, wet)) {
-      g_thresholds.soil_adc_dry = dry;
-      g_thresholds.soil_adc_wet = wet;
-      Serial.println(">> Kalibrasi tersimpan.");
-    } else {
-      Serial.println(">> Gagal simpan kalibrasi (NVS).");
-    }
-  } else {
-    Serial.println(">> Kalibrasi tidak valid (kering harus > basah). Batal.");
+void heartbeat(uint32_t now) {
+  static uint32_t last;
+  static bool state;
+  if (now - last >= timing::DIAG_INTERVAL_MS) {
+    last = now;
+    state = !state;
+    digitalWrite(timing::DIAG_PIN, state);
   }
 }
-}  // namespace
+
+void diagnostics(uint32_t now) {
+  const uint32_t heap = ESP.getFreeHeap();
+  if (heap < g_minFreeHeap) g_minFreeHeap = heap;
+  Serial.printf("[system] boot=%lu reset=%d stage=%u loop_max_ms=%lu overruns=%lu heap=%lu heap_min=%lu\n",
+      static_cast<unsigned long>(g_bootCount), static_cast<int>(esp_reset_reason()),
+      static_cast<unsigned>(g_initStage), static_cast<unsigned long>(g_maxLoopLatency),
+      static_cast<unsigned long>(g_deadlineOverruns), static_cast<unsigned long>(heap),
+      static_cast<unsigned long>(g_minFreeHeap));
+#ifndef SNOWBERRY_MEASUREMENT_MODE
+  char ip[16];
+  network_worker::ipAddress(ip, sizeof(ip));
+  Serial.printf("[network] wifi=%s ip=%s rssi_dbm=%ld ntp=%s disconnect_reason=%d(%s) net=%s net_ms=%lu net_result=%d\n",
+      network_worker::wifiConnected() ? "CONNECTED" : "DISCONNECTED", ip,
+      network_worker::wifiConnected() ? static_cast<long>(WiFi.RSSI()) : 0L,
+      g_time.synced ? "SYNCED" : "NOT_SYNCED", network_worker::wifiDisconnectReason(),
+      network_worker::wifiDisconnectReasonName(),
+      network_worker::operation(),
+      static_cast<unsigned long>(network_worker::operationDurationMs()), network_worker::operationResult());
+#endif
+  Serial.printf("[sensor] temperature_c=%.1f valid=%d humidity_pct=%.1f valid=%d age_ms=%lu "
+                "lux=%.1f valid=%d age_ms=%lu soil_pct=%.1f soil_raw_adc=%u valid=%d age_ms=%lu\n",
+      g_sensor.temperature_c, g_sensor.temp_valid, g_sensor.humidity_pct, g_sensor.rh_valid,
+      static_cast<unsigned long>(g_sensor.rh_sample_ms ? now - g_sensor.rh_sample_ms : 0),
+      g_sensor.lux, g_sensor.lux_valid,
+      static_cast<unsigned long>(g_sensor.lux_sample_ms ? now - g_sensor.lux_sample_ms : 0),
+      g_sensor.soil_pct, g_sensor.soil_raw_adc, g_sensor.soil_valid,
+      static_cast<unsigned long>(g_sensor.soil_sample_ms ? now - g_sensor.soil_sample_ms : 0));
+  Serial.printf("[gpio] GPIO16(growlight) commanded=%s level=%s GPIO25(spare) commanded=OFF level=%s "
+                "GPIO17(pump) commanded=%s level=%s GPIO18(mist1) commanded=%s level=%s "
+                "GPIO19(fan1) commanded=%s level=%s GPIO23(mist2) commanded=%s level=%s "
+                "GPIO32(fan2) commanded=%s level=%s\n",
+      actuators::isOn(ActuatorKey::GROWLIGHT) ? "ON" : "OFF", digitalRead(pins::GROWLIGHT) ? "HIGH" : "LOW",
+      digitalRead(pins::SPARE_SSR) ? "HIGH" : "LOW",
+      actuators::isOn(ActuatorKey::PUMP) ? "ON" : "OFF", digitalRead(pins::PUMP) ? "HIGH" : "LOW",
+      actuators::isOn(ActuatorKey::MIST) ? "ON" : "OFF", digitalRead(pins::MIST) ? "HIGH" : "LOW",
+      actuators::isOn(ActuatorKey::FAN) ? "ON" : "OFF", digitalRead(pins::FAN) ? "HIGH" : "LOW",
+      actuators::isOn(ActuatorKey::MIST_2) ? "ON" : "OFF", digitalRead(pins::MIST_2) ? "HIGH" : "LOW",
+      actuators::isOn(ActuatorKey::FAN_2) ? "ON" : "OFF", digitalRead(pins::FAN_2) ? "HIGH" : "LOW");
+  Serial.printf("[control] active_fault=%s message=\"%s\" block_growlight=%s block_pump=%s block_humidifier=%s\n",
+      faultCode(g_activeFault), faultMessage(g_activeFault),
+      reasonStr(control::reasonOf(ActuatorKey::GROWLIGHT)),
+      reasonStr(control::reasonOf(ActuatorKey::PUMP)),
+      reasonStr(control::reasonOf(ActuatorKey::MIST)));
+}
+}
 
 void setup() {
-  Serial.begin(115200);
-  delay(100);
-
-  // 1) SAFE STATE PALING AWAL — sebelum apa pun.
+  digitalWrite(timing::DIAG_PIN, LOW);
+  pinMode(timing::DIAG_PIN, OUTPUT);
+  digitalWrite(timing::DIAG_PIN, LOW);
   actuators::initSafeState();
-  Serial.println("\n[boot] Semua aktuator OFF (safe-state).");
-
+  ++g_bootCount;
+  Serial.begin(115200);
   pinMode(pins::BUTTON, INPUT_PULLUP);
-  pinMode(LED_BUILTIN, OUTPUT);
 
-  // 2) Muat threshold dari NVS. Jika gagal, pakai default + fault.
-  const bool nvsReady=storage::begin();
-  if (nvsReady) {
-    g_bootCount=storage::incrementBootCount();
-    control::PumpHistory history;
-    storage::loadPumpHistory(history);  // missing/corrupt history keeps default five-hour lock
-    control::restorePumpHistory(history,millis());
-    control::setPumpHistorySaver(storage::savePumpHistory);
+  g_initStage = InitStage::STORAGE;
+  if (!storage::begin() || !storage::loadThresholds(g_thresholds)) {
+    g_thresholds = Thresholds{};
+    storage::saveThresholds(g_thresholds);
   }
-  if (!nvsReady || !storage::loadThresholds(g_thresholds)) {
-    g_thresholds = Thresholds{};  // default aman Ciwidey
-    g_activeFault = Fault::NVS_ERROR;
-    Serial.println("[boot] NVS kosong/korupsi -> pakai default. Pump AUTO nonaktif sampai kalibrasi.");
-  } else {
-    Serial.println("[boot] Threshold dimuat dari NVS.");
-  }
+  control::setPumpStartReserver(storage::reservePumpStart);
+  control::restorePumpSafety(nullptr, 0, false, 0);
+#ifndef SNOWBERRY_MEASUREMENT_MODE
+  manual_control::begin();
+#endif
 
-
-  // 3) Sensor terakhir (setelah safe-state aktif).
-  if (!sensors::begin()) {
-    Serial.println("[boot] Peringatan: sensor I2C tidak terdeteksi.");
-  }
-
+  g_initStage = InitStage::SENSORS;
+  sensors::begin();
+  g_initStage = InitStage::NETWORK;
 #ifdef SNOWBERRY_MEASUREMENT_MODE
-  Serial.println("[boot] Masuk mode pengukuran: aktuator tetap OFF, API lokal aktif.");
   measurement::begin(&g_sensor);
 #else
-  g_time.synced = false;
-  fbsync::Config cfg;
-  fbsync::begin(cfg);
-  Serial.println("[boot] Masuk loop kontrol lokal.\n");
+  network_worker::begin(g_thresholds);
 #endif
+  g_initStage = InitStage::RUNNING;
 }
 
 void loop() {
-  const uint32_t loopStart=micros();
   const uint32_t now = millis();
-
-#ifndef SNOWBERRY_MEASUREMENT_MODE
-  // Physical safety deadline always runs before Wi-Fi or cloud work.
-  Fault deadlineFault=Fault::NONE;
-  control::step(g_thresholds,g_sensor,g_manual,g_time,now,deadlineFault);
-#endif
+  if (g_lastLoop) {
+    const uint32_t latency = now - g_lastLoop;
+    if (latency > g_maxLoopLatency) g_maxLoopLatency = latency;
+    if (latency > timing::CONTROL_INTERVAL_MS) ++g_deadlineOverruns;
+  }
+  g_lastLoop = now;
+  heartbeat(now);
+  runCalibration(now);
 
   if (now - g_lastSensor >= timing::SENSOR_INTERVAL_MS) {
     g_lastSensor = now;
-    Fault sensorFault = Fault::NONE;
+    Fault sensorFault;
     sensors::read(g_thresholds, g_sensor, sensorFault, now);
     if (sensorFault != Fault::NONE) g_activeFault = sensorFault;
-    else if (g_activeFault != Fault::NVS_ERROR) g_activeFault = Fault::NONE;
   }
 
 #ifdef SNOWBERRY_MEASUREMENT_MODE
+  forceAllOff(now);
   measurement::loop();
 #else
-  fbsync::loop(now);
-  g_time.synced = fbsync::timeSynced(g_time.epoch_ms, g_time.hour);
-  char cmdId[64] = "";
-  if (fbsync::pollCommand(g_manual, cmdId, sizeof(cmdId))) {
-    strncpy(g_pendingCommandId, cmdId, sizeof(g_pendingCommandId) - 1);
-    g_pendingCommandId[sizeof(g_pendingCommandId) - 1] = '\0';
-    g_pendingCommandAck = true;
+  g_time.synced = network_worker::timeNow(g_time.epoch_ms, g_time.hour);
+  if (g_time.synced && !g_pumpHistoryRestored) {
+    control::PumpStartRecord starts[2];
+    const size_t count = storage::loadPumpStarts(starts, 2);
+    control::restorePumpSafety(starts, count, true, g_time.epoch_ms);
+    g_pumpHistoryRestored = true;
   }
-
-  if (now - g_lastControl >= timing::CONTROL_INTERVAL_MS) {
+  Thresholds update;
+  if (network_worker::takeThresholds(update)) g_thresholds = update;
+  manual_control::take(g_manual);
+  if (!g_calibration.active() && now - g_lastControl >= timing::CONTROL_INTERVAL_MS) {
     g_lastControl = now;
-    Fault controlFault = Fault::NONE;
+    Fault controlFault;
     control::step(g_thresholds, g_sensor, g_manual, g_time, now, controlFault);
-    if (g_pendingCommandAck) {
-      const bool rejectedSafety = controlFault == Fault::COMMAND_REJECTED_SAFETY;
-      const bool expired = controlFault == Fault::COMMAND_EXPIRED;
-      fbsync::publishAck(
-        g_pendingCommandId,
-        rejectedSafety ? "REJECTED_SAFETY" : expired ? "EXPIRED" : "APPLIED",
-        rejectedSafety ? "Perintah pompa ditolak karena sensor media belum dikalibrasi." :
-          expired ? "Perintah manual sudah kedaluwarsa." :
-          g_manual.mode == Mode::AUTO ? "Alat kembali otomatis." : "Perintah manual diterapkan.");
-      if (rejectedSafety || expired) g_manual.valid = false;
-      g_pendingCommandAck = false;
-    }
     if (controlFault != Fault::NONE) g_activeFault = controlFault;
   }
 #endif
 
   if (now - g_lastReport >= 5000) {
     g_lastReport = now;
-    logStatus(now);
+    diagnostics(now);
+  }
 #ifndef SNOWBERRY_MEASUREMENT_MODE
-    fbsync::updateLiveSensors(g_sensor, g_activeFault, now);
+  // Status penuh ke Firestore tiap 60 s (api-contract §4); publish pertama
+  // langsung agar dashboard online sejak boot.
+  if (g_lastPublish == 0 || now - g_lastPublish >= timing::STATUS_PUBLISH_INTERVAL_MS) {
+    g_lastPublish = now;
+    network_worker::submitStatus(g_sensor, g_activeFault, now);
+  }
 #endif
-  }
-
-  if (now-g_lastHeartbeat>=timing::HEARTBEAT_INTERVAL_MS) {
-    g_lastHeartbeat=now;
-    digitalWrite(LED_BUILTIN,!digitalRead(LED_BUILTIN));
-  }
-
-
-  const uint32_t elapsed=micros()-loopStart;
-  if (elapsed>g_maxLoopUs) g_maxLoopUs=elapsed;
-  const uint32_t heap=ESP.getFreeHeap();
-  if (heap<g_minHeap) g_minHeap=heap;
 }

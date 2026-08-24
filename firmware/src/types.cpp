@@ -59,6 +59,7 @@ const char* reasonStr(Reason r) {
     case Reason::SENSOR_INVALID: return "sensor_invalid";
     case Reason::CONFIG_INVALID_REASON: return "config_invalid";
     case Reason::PHOTOPERIOD_LIMIT: return "photoperiod_limit";
+    case Reason::WATER_WINDOW_WAIT: return "water_window_wait";
     case Reason::SAFETY_OFF: return "safety_off";
   }
   return "unknown";

@@ -196,7 +196,11 @@ export function DashboardPage({
             return <section key={metric.id} className={`plant-walkthrough plant-slide-${plantDirection} tone-${metric.status}`} aria-label="Kondisi tanaman terperinci">
               <span className="plant-progress">{plantIndex + 1} dari {metrics.length}</span>
               <h2>{metric.label}</h2><strong className="plant-value">{metric.value}</strong>
-              <StatusPill label={`${sensorVisual[metric.status].label} · ${metric.issue ?? "Nyaman"}`} className={`tone-${metric.status}`} />
+              {/* Optimal saat aman; selain itu sebutkan masalahnya secara spesifik. */}
+              <StatusPill
+                label={metric.issue ? `${sensorVisual[metric.status].label} · ${metric.issue.charAt(0).toUpperCase()}${metric.issue.slice(1)}` : sensorVisual[metric.status].label}
+                className={`tone-${metric.status}`}
+              />
               <p>{metric.meaning}</p><strong>{metric.action}</strong>
               {metric.id === "light" && <div className="light-guidance"><strong>Estimasi DLI Alami: {estimatedDli.toFixed(1)} / {dliTarget} DLI</strong><span>Patokan cahaya saat ini: {thresholds.lux_low.toLocaleString("id-ID")}–{thresholds.lux_high.toLocaleString("id-ID")} lux</span><small>Estimasi dari cahaya alami. Durasi lampu tanam dicatat terpisah.</small></div>}
               <div className="walkthrough-actions">

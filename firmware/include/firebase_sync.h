@@ -24,17 +24,7 @@ struct Config {
   const char* device_id;
   uint32_t status_interval_ms = 60000;
   uint32_t telemetry_interval_ms = 60000;
-  uint32_t command_poll_ms = 10000;
   uint32_t threshold_poll_ms = 60000;
-};
-
-struct Diagnostics {
-  bool wifi_connected = false;
-  bool firebase_authenticated = false;
-  bool ntp_synced = false;
-  uint32_t wifi_attempts = 0;
-  uint32_t network_operations = 0;
-  uint32_t network_failures = 0;
 };
 
 void begin(const Config& cfg);
@@ -42,10 +32,6 @@ void loop(uint32_t nowMs);                 // panggil tiap iterasi, non-blocking
 
 bool online();                             // WiFi + Firebase siap
 bool timeSynced(int64_t& epochMsOut, uint8_t& hourOut);
-
-// Ambil command manual terbaru (jika command_id baru). Return false jika tidak ada.
-// Catatan: Implementasi wajib mengisi `out.received_at_ms = millis();` saat command baru terdeteksi.
-bool pollCommand(control::ManualCommand& out, char* lastIdOut, size_t idCap);
 
 // Ambil thresholds terbaru dari server. Return false jika tidak ada/invalid.
 bool fetchThresholds(Thresholds& out);
@@ -56,11 +42,25 @@ void publishStatus(const char* json, uint32_t nowMs);
 // Tulis acknowledgement command ke status/realtime.
 void publishAck(const char* commandId, const char* ackStatus, const char* ackMessage);
 
-// Tambah 1 sample telemetry (buffer RAM, flush per interval).
-void appendTelemetry(const char* sampleJson, uint32_t nowMs);
+// Buffer 1 sample telemetry dari pembacaan sensor terakhir; flush otomatis
+// tiap interval ke devices/{id}/telemetry/{YYYY-MM-DD} (tanggal WIB).
+// Sample dengan sensor invalid dilewati (gap jujur). Non-blocking.
+void appendTelemetry(const SensorReading& s, uint32_t nowMs);
 
-// Tulis langsung sensor ke status/realtime untuk demo.
+// Ambil command baru dari config/commands bila ada. Return true hanya untuk
+// command_id yang belum pernah diproses. Pemanggil wajib mem-publish ack.
+struct CloudCommand {
+  char command_id[48];
+  char actuator[16];
+  bool mode_manual;
+  bool state;
+  uint32_t duration_ms;
+  int64_t manual_until_epoch;
+};
+bool fetchCommand(CloudCommand& out);
+
+// Tulis langsung status lengkap (sensors+actuators+device+fault+last_seen)
+// ke status/realtime untuk demo. Dipanggil dari network task saja.
 void updateLiveSensors(const SensorReading& s, Fault fault, uint32_t nowMs);
-Diagnostics diagnostics();
 
 }  // namespace fbsync

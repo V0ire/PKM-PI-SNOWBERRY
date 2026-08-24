@@ -4,8 +4,9 @@
 
 namespace {
 Preferences g_prefs;
-constexpr const char* NS = "snowberry";
-constexpr uint32_t MAGIC = 0x534E4231;  // "SNB1"
+constexpr const char* NS = "snowberry-test";
+constexpr uint32_t MAGIC = 0x534E4254;  // "SNBT"; isolate test defaults from production NVS
+constexpr const char* PUMP_KEY = "pump_hist";
 }  // namespace
 
 namespace storage {
@@ -41,24 +42,22 @@ bool saveSoilCalibration(uint16_t dry, uint16_t wet) {
   return saveThresholds(t);
 }
 
-bool loadPumpHistory(control::PumpHistory& out) {
-  const size_t n=g_prefs.getBytes("pump_hist",&out,sizeof(out));
-  return n==sizeof(out) && out.magic==0x50484D31 && out.version==1 && out.count<=2 &&
-         !(out.count==0 && !out.requires_conservative_lock) &&
-         !(out.count>0 && out.starts_epoch_ms[0]<=0) &&
-         !(out.count==2 && (out.starts_epoch_ms[1]<=0 || out.starts_epoch_ms[0]>out.starts_epoch_ms[1])) &&
-         out.checksum==control::pumpHistoryChecksum(out);
+bool reservePumpStart(const control::PumpStartRecord& record) {
+  control::PumpStartRecord records[2] = {};
+  size_t count = loadPumpStarts(records, 2);
+  if (count >= 2) { records[0] = records[1]; count = 1; }
+  records[count++] = record;
+  const size_t bytes = count * sizeof(records[0]);
+  return g_prefs.putBytes(PUMP_KEY, records, bytes) == bytes;
 }
 
-bool savePumpHistory(const control::PumpHistory& history) {
-  return history.magic==0x50484D31 && history.version==1 && history.count<=2 &&
-         history.checksum==control::pumpHistoryChecksum(history) &&
-         g_prefs.putBytes("pump_hist",&history,sizeof(history))==sizeof(history);
-}
-
-uint32_t incrementBootCount() {
-  const uint32_t value=g_prefs.getUInt("boot_count",0)+1;
-  return g_prefs.putUInt("boot_count",value)==sizeof(value) ? value : 0;
+size_t loadPumpStarts(control::PumpStartRecord* out, size_t cap) {
+  if (!out || cap == 0) return 0;
+  const size_t bytes = g_prefs.getBytesLength(PUMP_KEY);
+  if (bytes == 0 || bytes % sizeof(control::PumpStartRecord) != 0) return 0;
+  size_t count = bytes / sizeof(control::PumpStartRecord);
+  if (count > cap) count = cap;
+  return g_prefs.getBytes(PUMP_KEY, out, count * sizeof(out[0])) == count * sizeof(out[0]) ? count : 0;
 }
 
 }  // namespace storage

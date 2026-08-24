@@ -25,8 +25,21 @@ export function createMockDataSource(): SnowberryDataSource {
       cb(thresholds);
       return () => thresholdSubs.delete(cb);
     },
-    async loadTelemetry(): Promise<TelemetryPoint[]> {
-      return HISTORY_POINTS;
+    async loadTelemetry(days = 1): Promise<TelemetryPoint[]> {
+      if (days <= 1) return HISTORY_POINTS;
+      const result: TelemetryPoint[] = [];
+      for (let offset = days - 1; offset >= 1; offset -= 1) {
+        const dayMs = offset * 86_400_000;
+        const variation = (offset % 5) - 2;
+        result.push(...HISTORY_POINTS.map((point) => ({
+          ...point,
+          ts: point.ts - dayMs,
+          t: point.t + variation * 0.3,
+          h: Math.max(0, Math.min(100, point.h + variation)),
+          s: Math.max(0, Math.min(100, point.s - variation)),
+        })));
+      }
+      return [...result, ...HISTORY_POINTS].sort((a, b) => a.ts - b.ts);
     },
     subscribeProfile(cb) {
       profileSubs.add(cb);

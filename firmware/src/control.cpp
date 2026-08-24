@@ -1,392 +1,255 @@
 #include "control.h"
 #include <Arduino.h>
+#include <stddef.h>
+
 #include "actuators.h"
 #include "config.h"
-#include "sensor_health.h"
 
 namespace {
 using AK = ActuatorKey;
 
-// State kontrol internal (bukan state fisik pin — itu di actuators.cpp).
-struct FanMistState {
-  bool fanLatched = false;
-  bool mistLatched = false;
-} g_fm;
-
-// Pump pulse/soak + dua start dalam rolling 5 jam.
 struct PumpState {
-  bool pulseOn = false;
-  uint32_t phaseStart = 0;
-  uint32_t starts[2] = {0, 0};
-  int64_t startsEpoch[2] = {0, 0};
-  uint8_t startCount = 0;
-  float soilAtCycleStart = 0;
-  uint8_t cyclesNoEffect = 0;
-  uint32_t lastManualRequest = 0;
-  bool restoredLock = false;
-  uint32_t restoredAt = 0;
-  bool persistFailed = false;
-  uint32_t lastStop = 0;
+  bool pulse_on = false;
+  bool conservative_lock = false;
+  uint32_t pulse_started_ms = 0;
+  uint32_t soak_until_ms = 0;
+  uint32_t last_manual_token = 0;
+  bool manual_token_seen = false;
+  control::PumpStartRecord starts[2];
+  size_t start_count = 0;
 } g_pump;
 
-control::PumpHistorySaver g_saveHistory = nullptr;
+bool defaultReserve(const control::PumpStartRecord&) { return false; }
+control::PumpStartReserver g_reserve = defaultReserve;
+bool g_humidifier_latched = false;
+bool g_light_latched = false;
+Reason g_reason[static_cast<size_t>(AK::COUNT)] = {};
 
-// Growlight: akumulasi jam terang harian.
-struct LightState {
-  float onMsToday = 0;
-  int lastDay = -1;
-  uint32_t lastOnMark = 0;
-} g_light;
-
-Reason g_reason[static_cast<int>(AK::COUNT)] = {
-  Reason::SAFETY_OFF, Reason::SAFETY_OFF, Reason::SAFETY_OFF,
-  Reason::SAFETY_OFF, Reason::SAFETY_OFF, Reason::SAFETY_OFF
-};
-
-void setReason(AK k, Reason r) { g_reason[static_cast<int>(k)] = r; }
-
-// Terapkan keinginan ON/OFF + catat reason.
-void drive(AK k, bool wantOn, Reason r, uint32_t nowMs) {
-  actuators::apply(k, wantOn, nowMs);
-  setReason(k, r);
+void reason(AK key, Reason value) { g_reason[static_cast<size_t>(key)] = value; }
+bool fresh(bool valid, uint32_t sampled, uint32_t now) {
+  return valid && sampled != 0 && now - sampled <= timing::SENSOR_STALE_MS;
 }
-
-void safetyOff(AK k, uint32_t nowMs, Reason r) {
-  actuators::forceOff(k, nowMs);
-  setReason(k, r);
+bool expired(const control::ManualCommand& cmd, const control::TimeCtx& time, uint32_t now) {
+  uint32_t duration = cmd.duration_ms;
+  if (duration == 0 || duration > timing::MANUAL_MAX_MS) duration = timing::MANUAL_MAX_MS;
+  return time.synced && cmd.manual_until_epoch > 0
+      ? time.epoch_ms >= cmd.manual_until_epoch
+      : now - cmd.received_at_ms >= duration;
 }
-
-void safetyOffHumidifier(uint32_t nowMs, Reason r);
-
-void driveHumidifier(bool wantOn, Reason r, uint32_t nowMs) {
-  if (!wantOn) {
-    safetyOffHumidifier(nowMs,r);
-    return;
+void off(AK key, uint32_t now, Reason why) {
+  actuators::forceOff(key, now);
+  reason(key, why);
+}
+void drive(AK key, bool on, uint32_t now, Reason why) {
+  actuators::apply(key, on, now);
+  reason(key, why);
+}
+void humidifierOff(uint32_t now, Reason why) {
+  actuators::forceOffHumidifierGroup(now);
+  reason(AK::MIST, why); reason(AK::FAN, why);
+  reason(AK::MIST_2, why); reason(AK::FAN_2, why);
+  g_humidifier_latched = false;
+}
+void humidifierDrive(bool on, uint32_t now, Reason why) {
+  actuators::applyHumidifierGroup(on, now);
+  reason(AK::MIST, why); reason(AK::FAN, why);
+  reason(AK::MIST_2, why); reason(AK::FAN_2, why);
+  g_humidifier_latched = on;
+}
+void pruneStarts(const control::TimeCtx& time, uint32_t now) {
+  if (!time.synced) return;
+  size_t kept = 0;
+  for (size_t i = 0; i < g_pump.start_count; ++i) {
+    const auto& start = g_pump.starts[i];
+    const bool recent = start.epoch_ms > 0
+        ? time.epoch_ms - start.epoch_ms < 18000000LL
+        : now - start.boot_ms < 18000000UL;
+    if (recent && kept < 2) g_pump.starts[kept++] = start;
   }
-  drive(AK::MIST, wantOn, r, nowMs);
-  drive(AK::FAN, wantOn, r, nowMs);
-  drive(AK::MIST_2, wantOn, r, nowMs);
-  drive(AK::FAN_2, wantOn, r, nowMs);
+  g_pump.start_count = kept;
 }
-
-void safetyOffHumidifier(uint32_t nowMs, Reason r) {
-  safetyOff(AK::MIST, nowMs, r);
-  safetyOff(AK::FAN, nowMs, r);
-  safetyOff(AK::MIST_2, nowMs, r);
-  safetyOff(AK::FAN_2, nowMs, r);
-}
-
-bool validFresh(bool valid, uint32_t updated, uint32_t now) {
-  return valid && sensor_health::fresh(now, updated, timing::SENSOR_STALE_MS);
-}
-
-control::PumpHistory historySnapshot(bool synced) {
-  control::PumpHistory h;
-  h.count = g_pump.startCount;
-  h.requires_conservative_lock = !synced;
-  for (uint8_t i=0; i<h.count; ++i) h.starts_epoch_ms[i] = g_pump.startsEpoch[i];
-  h.checksum=control::pumpHistoryChecksum(h);
-  return h;
-}
-
-void dropOldStarts(const Thresholds& t, const control::TimeCtx& time, uint32_t nowMs) {
-  while (g_pump.startCount) {
-    bool old = false;
-    if (time.synced && g_pump.startsEpoch[0] > 0)
-      old = time.epoch_ms - g_pump.startsEpoch[0] >= t.pump_window_ms;
-    else
-      old = nowMs - g_pump.starts[0] >= t.pump_window_ms;
-    if (!old) break;
-    g_pump.starts[0]=g_pump.starts[1];
-    g_pump.startsEpoch[0]=g_pump.startsEpoch[1];
-    --g_pump.startCount;
-  }
-  if (g_pump.restoredLock && nowMs-g_pump.restoredAt >= t.pump_window_ms) {
-    g_pump.restoredLock=false;
-    g_pump.startCount=0;
-  }
-}
-
-bool reserveStart(const Thresholds& t, const control::TimeCtx& time, uint32_t nowMs) {
-  dropOldStarts(t,time,nowMs);
-  if (g_pump.restoredLock || g_pump.startCount >= t.pump_start_limit) return false;
-  const uint8_t i=g_pump.startCount;
-  g_pump.starts[i]=nowMs;
-  g_pump.startsEpoch[i]=time.synced ? time.epoch_ms : 0;
-  ++g_pump.startCount;
-  if (g_saveHistory && !g_saveHistory(historySnapshot(time.synced))) {
-    --g_pump.startCount;
-    g_pump.persistFailed=true;
-    return false;
-  }
-  g_pump.pulseOn=true;
-  g_pump.phaseStart=nowMs;
+bool startPump(const control::TimeCtx& time, uint32_t now) {
+  pruneStarts(time, now);
+  if (g_pump.conservative_lock || g_pump.start_count >= 2 ||
+      static_cast<int32_t>(now - g_pump.soak_until_ms) < 0) return false;
+  control::PumpStartRecord record;
+  record.epoch_ms = time.synced ? time.epoch_ms : 0;
+  record.boot_ms = now;
+  if (!g_reserve(record)) return false;
+  g_pump.starts[g_pump.start_count++] = record;
+  g_pump.pulse_on = true;
+  g_pump.pulse_started_ms = now;
+  actuators::apply(AK::PUMP, true, now);
+  reason(AK::PUMP, Reason::SOIL_LOW);
   return true;
 }
-}  // namespace
+}
 
 namespace control {
-
-uint32_t pumpHistoryChecksum(const PumpHistory& h) {
-  uint32_t value=2166136261u;
-  auto add=[&](uint64_t n) {
-    for (uint8_t i=0;i<8;++i) { value^=static_cast<uint8_t>(n>>(i*8)); value*=16777619u; }
-  };
-  add(h.magic); add(h.version); add(static_cast<uint64_t>(h.starts_epoch_ms[0]));
-  add(static_cast<uint64_t>(h.starts_epoch_ms[1])); add(h.count);
-  add(h.requires_conservative_lock ? 1 : 0);
-  return value;
-}
-
-void setPumpHistorySaver(PumpHistorySaver saver) { g_saveHistory=saver; }
-void restorePumpHistory(const PumpHistory& h, uint32_t nowMs) {
-  g_pump={};
-  if (h.magic != 0x50484D31 || h.version != 1 || h.count > 2 ||
-      (h.count == 0 && !h.requires_conservative_lock) ||
-      (h.count > 0 && h.starts_epoch_ms[0] <= 0) ||
-      (h.count == 2 && (h.starts_epoch_ms[1] <= 0 || h.starts_epoch_ms[0] > h.starts_epoch_ms[1])) ||
-      h.checksum != pumpHistoryChecksum(h)) {
-    g_pump.restoredLock=true;
-    g_pump.restoredAt=nowMs;
-    return;
-  }
-  g_pump.startCount=h.count > 2 ? 2 : h.count;
-  for (uint8_t i=0;i<g_pump.startCount;++i) g_pump.startsEpoch[i]=h.starts_epoch_ms[i];
-  g_pump.restoredLock=h.requires_conservative_lock;
-  g_pump.restoredAt=nowMs;
-}
-PumpHistory pumpHistory() { return historySnapshot(false); }
-void resetForTest() { g_pump={}; g_fm={}; g_light={}; }
-
 bool validate(const Thresholds& t) {
-  if (!(t.temp_low < t.temp_high)) return false;
-  if (!(t.rh_low < t.rh_high)) return false;
-  if (!(t.soil_low < t.soil_high)) return false;
-  if (!(t.lux_low < t.lux_high)) return false;
-  if (t.pump_pulse_ms != 10000 || t.soak_period_ms != 600000) return false;
-  if (t.pump_start_limit != 2 || t.pump_window_ms != 18000000) return false;
-  if (t.rh_low < 0 || t.rh_high > 100) return false;
-  if (t.soil_low < 0 || t.soil_high > 100) return false;
-  if (t.light_window_start >= t.light_window_end) return false;
-  if (t.light_window_end > 24) return false;
-  if (t.max_light_hours_per_day <= 0 || t.max_light_hours_per_day > 24) return false;
+  return t.temp_low < t.temp_high && t.rh_low >= 0 && t.rh_low < t.rh_high && t.rh_high <= 100 &&
+         t.soil_low >= 0 && t.soil_low < t.soil_high && t.soil_high <= 100 &&
+         t.lux_low >= 0 && t.lux_low < t.lux_high &&
+         t.pump_start_limit == 2 && t.pump_pulse_ms == 45000 &&
+       t.soak_period_ms == 900000 && t.pump_window_ms == 18000000 &&
+       t.light_window_start == 18 && t.light_window_end == 20 &&
+         t.soil_adc_dry > t.soil_adc_wet && t.soil_adc_dry <= 4095;
+}
+
+bool soilPercent(const Thresholds& t, uint16_t raw, float& out) {
+  if (t.soil_adc_dry <= t.soil_adc_wet || raw == 0 || raw >= 4095) return false;
+  const float span = static_cast<float>(t.soil_adc_dry - t.soil_adc_wet);
+  out = (static_cast<float>(t.soil_adc_dry) - raw) * 100.0f / span;
+  if (out < 0) out = 0;
+  if (out > 100) out = 100;
   return true;
 }
 
-bool soilPercent(const Thresholds& t, uint16_t rawAdc, float& outPct) {
-  if (t.soil_adc_dry == 0 || t.soil_adc_wet == 0) return false;  // belum kalibrasi
-  if (rawAdc == 0 || rawAdc >= 4095) return false;               // pinned = lepas/short
-  const uint16_t low = t.soil_adc_wet < t.soil_adc_dry ? t.soil_adc_wet : t.soil_adc_dry;
-  const uint16_t high = t.soil_adc_wet > t.soil_adc_dry ? t.soil_adc_wet : t.soil_adc_dry;
-  if (rawAdc < low || rawAdc > high) return false;
-  // Capacitive: ADC tinggi = kering, ADC rendah = basah.
-  float span = static_cast<float>(t.soil_adc_dry) - static_cast<float>(t.soil_adc_wet);
-  if (span == 0) return false;
-  float pct = (static_cast<float>(t.soil_adc_dry) - rawAdc) / span * 100.0f;
-  if (pct < 0) pct = 0;
-  if (pct > 100) pct = 100;
-  outPct = pct;
-  return true;
+void setPumpStartReserver(PumpStartReserver reserver) { g_reserve = reserver ? reserver : defaultReserve; }
+
+void restorePumpSafety(const PumpStartRecord* records, size_t count,
+                       bool trustworthyTime, int64_t nowEpochMs) {
+  g_pump = {};
+  if (!trustworthyTime) { g_pump.conservative_lock = true; return; }
+  int64_t latestEpochMs = 0;
+  for (size_t i = 0; records && i < count && g_pump.start_count < 2; ++i) {
+    // A start reserved without trustworthy time cannot be aged safely. Keep it
+    // charged and locked rather than letting a later NTP sync erase it.
+    if (records[i].epoch_ms == 0) {
+      g_pump.starts[g_pump.start_count++] = records[i];
+      g_pump.conservative_lock = true;
+    } else if (nowEpochMs - records[i].epoch_ms < 18000000LL) {
+      g_pump.starts[g_pump.start_count++] = records[i];
+      if (records[i].epoch_ms > latestEpochMs) latestEpochMs = records[i].epoch_ms;
+    }
+  }
+  if (!g_pump.conservative_lock && latestEpochMs > 0) {
+    const int64_t elapsed = nowEpochMs - latestEpochMs;
+    if (elapsed < 900000LL) g_pump.soak_until_ms = millis() + static_cast<uint32_t>(900000LL - elapsed);
+  }
 }
 
-int32_t jakartaDayId(int64_t epochMs) {
-  return static_cast<int32_t>((epochMs + 7LL*3600000LL) / 86400000LL);
+void resetForTest() {
+  g_pump = {};
+  g_humidifier_latched = false;
+  g_light_latched = false;
+  for (auto& r : g_reason) r = Reason::SAFETY_OFF;
 }
 
-// ---- Fan + Mist dengan resolusi konflik ---------------------------------
-static void controlFanMist(const Thresholds& t, const SensorReading& s, uint32_t nowMs) {
-  if (!validFresh(s.rh_valid, s.rh_updated_ms, nowMs)) {
-    safetyOffHumidifier(nowMs, Reason::SENSOR_INVALID);
-    g_fm = {};
+static void humidifier(const Thresholds& t, const SensorReading& s,
+                       const ManualCommand& cmd, const TimeCtx& time,
+                       uint32_t now, Fault& fault) {
+  const bool safe = fresh(s.rh_valid, s.rh_sample_ms, now) &&
+                    s.humidity_pct >= 0 && s.humidity_pct <= 100;
+  const bool manual = cmd.valid && cmd.mode == Mode::MANUAL && cmd.target == ManualTarget::HUMIDIFIER;
+  if (!safe) {
+    humidifierOff(now, Reason::SENSOR_INVALID);
+    if (manual && cmd.state) fault = Fault::COMMAND_REJECTED_SAFETY;
     return;
   }
-  bool wantOn = g_fm.fanLatched || g_fm.mistLatched;
-  Reason reason = wantOn ? Reason::HUMIDITY_LOW : Reason::HUMIDITY_OK;
-  if (s.humidity_pct <= t.rh_low) {
-    wantOn = true;
-    reason = Reason::HUMIDITY_LOW;
-  } else if (s.humidity_pct >= t.rh_high) {
-    wantOn = false;
-    reason = Reason::HUMIDITY_HIGH;
+  if (manual && !expired(cmd, time, now)) {
+    if (cmd.state) humidifierDrive(true, now, Reason::MANUAL_OVERRIDE);
+    else humidifierOff(now, Reason::MANUAL_OVERRIDE);
+    return;
   }
-  g_fm.fanLatched = wantOn;
-  g_fm.mistLatched = wantOn;
-  driveHumidifier(wantOn, reason, nowMs);
+  if (manual && expired(cmd, time, now)) fault = Fault::COMMAND_EXPIRED;
+  bool want = g_humidifier_latched;
+  if (s.humidity_pct <= t.rh_low) want = true;
+  else if (s.humidity_pct >= t.rh_high) want = false;
+  humidifierDrive(want, now, want ? Reason::HUMIDITY_LOW : Reason::HUMIDITY_OK);
 }
 
-// ---- Pump pulse/soak + proteksi ------------------------------------------
-static Fault controlPump(const Thresholds& t, const SensorReading& s,
-                         const TimeCtx& time, uint32_t nowMs, bool request) {
-  if (!validFresh(s.soil_valid, s.soil_updated_ms, nowMs)) {
-    safetyOff(AK::PUMP, nowMs, Reason::SENSOR_INVALID);
-    if (g_pump.pulseOn) g_pump.lastStop=nowMs;
-    g_pump.pulseOn = false;
-    return request ? Fault::COMMAND_REJECTED_SAFETY : Fault::NONE;
+static Fault pump(const Thresholds& t, const SensorReading& s,
+                  const ManualCommand& cmd, const TimeCtx& time, uint32_t now) {
+  (void)t;
+  const bool safe = fresh(s.soil_valid, s.soil_sample_ms, now) &&
+                    s.soil_raw_adc > 0 && s.soil_raw_adc < 4095;
+  if (!safe) {
+    off(AK::PUMP, now, Reason::SENSOR_INVALID);
+    if (g_pump.pulse_on) g_pump.soak_until_ms = now + 900000;
+    g_pump.pulse_on = false;
+    return cmd.valid && cmd.target == ManualTarget::PUMP && cmd.state
+        ? Fault::COMMAND_REJECTED_SAFETY : Fault::NONE;
   }
-
-  dropOldStarts(t,time,nowMs);
-  if (g_pump.pulseOn) {
-    if (nowMs - g_pump.phaseStart >= t.pump_pulse_ms) {
-      g_pump.pulseOn=false;
-      g_pump.lastStop=nowMs;
-      safetyOff(AK::PUMP,nowMs,Reason::SOIL_LOW);
+  if (g_pump.pulse_on) {
+    if (now - g_pump.pulse_started_ms >= 45000) {
+      off(AK::PUMP, now, Reason::SOIL_LOW);
+      g_pump.pulse_on = false;
+      g_pump.soak_until_ms = now + 900000;
     } else {
-      drive(AK::PUMP,true,Reason::SOIL_LOW,nowMs);
+      drive(AK::PUMP, true, now, Reason::SOIL_LOW);
     }
     return Fault::NONE;
   }
-
-  safetyOff(AK::PUMP,nowMs,Reason::SOIL_OK);
-  const bool autoRequest = s.soil_pct <= t.soil_low;
-  if (!request && !autoRequest) return Fault::NONE;
-  if (s.soil_pct >= t.soil_high && !request) return Fault::NONE;
-  if (g_pump.restoredLock || g_pump.startCount >= t.pump_start_limit)
-    return Fault::PUMP_MAX_CYCLE_REACHED;
-  if (g_pump.lastStop && nowMs-g_pump.lastStop < t.soak_period_ms)
-    return request ? Fault::COMMAND_REJECTED_SAFETY : Fault::NONE;
-  if (!g_pump.lastStop && g_pump.startCount &&
-      nowMs-g_pump.starts[g_pump.startCount-1] < t.soak_period_ms)
-    return request ? Fault::COMMAND_REJECTED_SAFETY : Fault::NONE;
-  if (!reserveStart(t,time,nowMs))
-    return g_pump.persistFailed ? Fault::NVS_ERROR : Fault::PUMP_MAX_CYCLE_REACHED;
-  g_pump.soilAtCycleStart=s.soil_pct;
-  drive(AK::PUMP,true,request ? Reason::MANUAL_OVERRIDE : Reason::SOIL_LOW,nowMs);
+  const bool manual = cmd.valid && cmd.mode == Mode::MANUAL && cmd.target == ManualTarget::PUMP;
+  if (manual && expired(cmd, time, now)) return Fault::COMMAND_EXPIRED;
+  if (manual && !cmd.state) { off(AK::PUMP, now, Reason::MANUAL_OVERRIDE); return Fault::NONE; }
+  const bool newManualRequest = manual && cmd.state &&
+      (!g_pump.manual_token_seen || cmd.received_at_ms != g_pump.last_manual_token);
+  if (newManualRequest) {
+    g_pump.last_manual_token = cmd.received_at_ms;
+    g_pump.manual_token_seen = true;
+  }
+  // Siram otomatis hanya pada jendela sore (15:00-18:00 WIB). Di luar jendela
+  // media keros tetap terpantau (reason water_window_wait) tanpa memotong
+  // pulse yang sedang berjalan. Kontrol manual tidak terpengaruh jendela.
+  const bool soilDry = s.soil_pct <= t.soil_low;
+  const bool inWaterWindow = time.synced &&
+      time.hour >= schedule::WATER_WINDOW_START_HOUR &&
+      time.hour < schedule::WATER_WINDOW_END_HOUR;
+  const bool autoRequest = !manual && soilDry && inWaterWindow;
+  if (newManualRequest || autoRequest) {
+    if (!startPump(time, now)) {
+      off(AK::PUMP, now, Reason::SAFETY_OFF);
+      return Fault::PUMP_MAX_CYCLE_REACHED;
+    }
+  } else if (!manual && soilDry) {
+    off(AK::PUMP, now, Reason::WATER_WINDOW_WAIT);
+  } else off(AK::PUMP, now, Reason::SOIL_OK);
   return Fault::NONE;
 }
 
-// ---- Growlight lux + photoperiod window ----------------------------------
-static void controlGrowlight(const Thresholds& t, const SensorReading& s,
-                             const TimeCtx& time, uint32_t nowMs) {
-  if (!validFresh(s.lux_valid, s.lux_updated_ms, nowMs) || !time.synced) {
-    safetyOff(AK::GROWLIGHT, nowMs, Reason::SENSOR_INVALID);
+static void growlight(const Thresholds& t, const SensorReading& s,
+                      const ManualCommand& cmd, const TimeCtx& time,
+                      uint32_t now, Fault& fault) {
+  const bool safe = time.synced && fresh(s.lux_valid, s.lux_sample_ms, now) &&
+                    s.lux >= 0 && s.lux <= 120000;
+  const bool manual = cmd.valid && cmd.mode == Mode::MANUAL && cmd.target == ManualTarget::GROWLIGHT;
+  if (!safe) {
+    off(AK::GROWLIGHT, now, !time.synced ? Reason::PHOTOPERIOD_LIMIT : Reason::SENSOR_INVALID);
+    if (manual && cmd.state) fault = Fault::COMMAND_REJECTED_SAFETY;
     return;
   }
-
-  // Akumulasi jam terang harian.
-  if (actuators::isOn(AK::GROWLIGHT) && g_light.lastOnMark != 0) {
-    g_light.onMsToday += (nowMs - g_light.lastOnMark);
+  if (manual && !expired(cmd, time, now)) {
+    drive(AK::GROWLIGHT, cmd.state, now, Reason::MANUAL_OVERRIDE);
+    g_light_latched = cmd.state;
+    return;
   }
-  g_light.lastOnMark = nowMs;
-  if (time.synced) {
-    const int day = jakartaDayId(time.epoch_ms);
-    if (day != g_light.lastDay) { g_light.lastDay = day; g_light.onMsToday = 0; }
+  if (manual && expired(cmd, time, now)) fault = Fault::COMMAND_EXPIRED;
+  // Lampu otomatis hanya dalam jendela 18:00-20:00 WIB (keputusan produk).
+  // Latch direset di luar jendela agar saat jendela terbuka keputusan dinilai
+  // dari lux saat itu, bukan sisa latch kemarin.
+  const bool inLightWindow = time.hour >= t.light_window_start &&
+                             time.hour < t.light_window_end;
+  if (!inLightWindow) {
+    g_light_latched = false;
+    off(AK::GROWLIGHT, now, Reason::PHOTOPERIOD_LIMIT);
+    return;
   }
-
-  const bool darkEnough = s.lux <= t.lux_low;
-  const bool brightEnough = s.lux >= t.lux_high;
-  const float maxMs = t.max_light_hours_per_day * 3600000.0f;
-  const bool overDaily = g_light.onMsToday >= maxMs;
-
-  const bool inWindow = (time.hour >= t.light_window_start && time.hour < t.light_window_end);
-
-  bool want;
-  Reason reason;
-  if (brightEnough || overDaily || !inWindow) {
-    want = false;
-    reason = overDaily || !inWindow ? Reason::PHOTOPERIOD_LIMIT : Reason::LUX_OK;
-  } else if (darkEnough) {
-    want = true;
-    reason = time.synced ? Reason::LUX_LOW : Reason::PHOTOPERIOD_LIMIT;
-  } else {
-    want = actuators::isOn(AK::GROWLIGHT);  // hysteresis: tahan state
-    reason = want ? Reason::LUX_LOW : Reason::LUX_OK;
-  }
-  drive(AK::GROWLIGHT, want, reason, nowMs);
-}
-
-// ---- Manual override (prioritas di atas auto, di bawah safety) ----------
-static bool applyManual(const ManualCommand& cmd, const SensorReading& s,
-                        const TimeCtx& time, uint32_t nowMs, Fault& outFault) {
-  if (!cmd.valid || cmd.mode != Mode::MANUAL) return false;
-
-  uint32_t active_duration = cmd.duration_ms;
-  if (active_duration == 0 || active_duration > timing::MANUAL_MAX_MS) {
-    active_duration = timing::MANUAL_MAX_MS;
-  }
-
-  // Expiry: pakai epoch jika synced, else fallback durasi via millis().
-  bool expired = false;
-  if (time.synced && cmd.manual_until_epoch > 0) {
-    expired = (time.epoch_ms >= cmd.manual_until_epoch);
-  } else {
-    expired = (nowMs - cmd.received_at_ms >= active_duration);
-  }
-
-  if (expired) { outFault = Fault::COMMAND_EXPIRED; return false; }
-
-  if (cmd.key == AK::PUMP) return false;
-
-  const bool humidifier = cmd.key == AK::MIST || cmd.key == AK::FAN ||
-                          cmd.key == AK::MIST_2 || cmd.key == AK::FAN_2;
-  if (humidifier) {
-    if (cmd.state && !validFresh(s.rh_valid,s.rh_updated_ms,nowMs)) {
-      safetyOffHumidifier(nowMs,Reason::SENSOR_INVALID);
-      outFault=Fault::COMMAND_REJECTED_SAFETY;
-    } else {
-      driveHumidifier(cmd.state,Reason::MANUAL_OVERRIDE,nowMs);
-    }
-    return true;
-  }
-
-  if (cmd.key == AK::GROWLIGHT && cmd.state &&
-      (!validFresh(s.lux_valid,s.lux_updated_ms,nowMs) || !time.synced)) {
-    safetyOff(AK::GROWLIGHT,nowMs,Reason::SENSOR_INVALID);
-    outFault=Fault::COMMAND_REJECTED_SAFETY;
-    return true;
-  }
-
-  // Hard safety tetap menang: pump manual ON dilarang jika soil invalid.
-  if (cmd.key == AK::PUMP && cmd.state && !s.soil_valid) {
-    safetyOff(AK::PUMP, nowMs, Reason::SAFETY_OFF);
-    outFault = Fault::COMMAND_REJECTED_SAFETY;
-    return true;  // manual "ditangani" (ditolak), auto tidak jalan untuk pump
-  }
-
-  drive(cmd.key, cmd.state, Reason::MANUAL_OVERRIDE, nowMs);
-  return true;
+  if (s.lux <= t.lux_low) g_light_latched = true;
+  else if (s.lux >= t.lux_high) g_light_latched = false;
+  drive(AK::GROWLIGHT, g_light_latched, now, g_light_latched ? Reason::LUX_LOW : Reason::LUX_OK);
 }
 
 void step(const Thresholds& t, const SensorReading& s, const ManualCommand& cmd,
-          const TimeCtx& time, uint32_t nowMs, Fault& outFault) {
+          const TimeCtx& time, uint32_t now, Fault& outFault) {
   outFault = Fault::NONE;
-
-  // Manual override berlaku per-aktuator. Jika command menyasar 1 aktuator,
-  // aktuator lain tetap AUTO.
-  const uint32_t pumpRequestId = cmd.received_at_ms + 1;
-  const bool pumpCommand = cmd.valid && cmd.mode==Mode::MANUAL && cmd.key==AK::PUMP && cmd.state;
-  bool pumpExpired=false;
-  if (pumpCommand) {
-    uint32_t duration=cmd.duration_ms;
-    if (duration==0 || duration>timing::MANUAL_MAX_MS) duration=timing::MANUAL_MAX_MS;
-    pumpExpired=time.synced && cmd.manual_until_epoch>0
-      ? time.epoch_ms>=cmd.manual_until_epoch
-      : nowMs-cmd.received_at_ms>=duration;
-  }
-  const bool pumpRequest = pumpCommand && !pumpExpired && pumpRequestId != g_pump.lastManualRequest;
-  if (pumpRequest) g_pump.lastManualRequest=pumpRequestId;
-  if (pumpExpired) outFault=Fault::COMMAND_EXPIRED;
-  bool manualHandled = false;
-  AK manualKey = cmd.key;
-  if (cmd.valid && cmd.mode == Mode::MANUAL) {
-    manualHandled = applyManual(cmd, s, time, nowMs, outFault);
-  }
-
-  auto isManual = [&](AK k) { return manualHandled && manualKey == k; };
-
-  // AUTO untuk aktuator yang tidak sedang manual.
-  if (!isManual(AK::FAN) && !isManual(AK::MIST) && !isManual(AK::FAN_2) && !isManual(AK::MIST_2)) {
-    controlFanMist(t, s, nowMs);
-  }
-  Fault pf = controlPump(t,s,time,nowMs,pumpRequest);
-  if (cmd.valid && cmd.mode==Mode::MANUAL && cmd.key==AK::PUMP && cmd.state &&
-      !validFresh(s.soil_valid,s.soil_updated_ms,nowMs))
-    pf=Fault::COMMAND_REJECTED_SAFETY;
-  if (pf != Fault::NONE && outFault == Fault::NONE) outFault=pf;
-  if (!isManual(AK::GROWLIGHT)) {
-    controlGrowlight(t, s, time, nowMs);
-  }
+  if (cmd.valid && cmd.target == ManualTarget::UNKNOWN) outFault = Fault::COMMAND_REJECTED_SAFETY;
+  humidifier(t, s, cmd, time, now, outFault);
+  const Fault pumpFault = pump(t, s, cmd, time, now);
+  if (outFault == Fault::NONE && pumpFault != Fault::NONE) outFault = pumpFault;
+  growlight(t, s, cmd, time, now, outFault);
 }
 
-Reason reasonOf(ActuatorKey key) { return g_reason[static_cast<int>(key)]; }
-
-}  // namespace control
+Reason reasonOf(ActuatorKey key) { return g_reason[static_cast<size_t>(key)]; }
+}

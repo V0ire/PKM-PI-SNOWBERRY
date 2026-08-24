@@ -80,7 +80,7 @@ while (true) {
         await pollThresholds(status);
         lastThresholdPoll = nowMs;
       }
-      if (nowMs - lastCommandPoll >= 10000) {
+      if (nowMs - lastCommandPoll >= 2000) {
         await pollCommand(status, nowMs, timeSynced);
         lastCommandPoll = nowMs;
       }

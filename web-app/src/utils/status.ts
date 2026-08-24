@@ -18,7 +18,9 @@ export const sensorVisual: Record<
   { label: string; className: string; bg: string; text: string; border: string; severity: number; shortMessage: string }
 > = {
   safe: {
-    label: "Aman",
+    // Keputusan produk 2026-08-24: kondisi dalam batas = "Optimal",
+    // bukan "Aman · Nyaman" yang redudan dan tidak informatif.
+    label: "Optimal",
     className: "tone-safe",
     bg: "var(--status-safe-bg)",
     text: "var(--status-safe-text)",
@@ -45,7 +47,7 @@ export const sensorVisual: Record<
     shortMessage: "Masalah penting.",
   },
   unknown: {
-    label: "Tidak Diketahui",
+    label: "Belum Ada Data",
     className: "tone-unknown",
     bg: "var(--status-unknown-bg)",
     text: "var(--status-unknown-text)",
@@ -512,8 +514,8 @@ export function getDashboardSummary(
   }
 
   return {
-    title: "Greenhouse aman untuk stroberi putih.",
-    detail: `Semua kondisi utama masih nyaman di fase ${phase.name.toLowerCase()}.`,
+    title: "Greenhouse dalam kondisi optimal.",
+    detail: `Semua kondisi utama nyaman untuk stroberi putih di fase ${phase.name.toLowerCase()}.`,
     action: "Tidak ada tindakan mendesak saat ini.",
     cropContext: phase.focus,
     badge,

@@ -1,4 +1,4 @@
-import { ChartLine, House, Power, Sprout } from "lucide-react";
+import { ChartLine, House, Power, Settings2, Sprout } from "lucide-react";
 import type { Page } from "../types";
 
 const items: Array<{ page: Page; label: string; Icon: typeof House }> = [
@@ -6,6 +6,7 @@ const items: Array<{ page: Page; label: string; Icon: typeof House }> = [
   { page: "plants", label: "Tanaman", Icon: Sprout },
   { page: "tools", label: "Alat", Icon: Power },
   { page: "history", label: "Riwayat", Icon: ChartLine },
+  { page: "settings", label: "Atur", Icon: Settings2 },
 ];
 
 export function BottomNav({ page, onChange }: { page: Page; onChange: (page: Page) => void }) {

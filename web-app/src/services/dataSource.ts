@@ -20,14 +20,21 @@ export interface SnowberryDataSource {
   subscribeStatus(cb: (status: RealtimeStatus) => void): () => void;
   // Thresholds: nilai awal + update.
   subscribeThresholds(cb: (thresholds: ThresholdConfig) => void): () => void;
-  // Riwayat telemetry untuk grafik (hari ini).
-  loadTelemetry(): Promise<TelemetryPoint[]>;
+  // Riwayat telemetry. days=1 membaca dokumen hari ini; 7/30 membaca
+  // dokumen harian WIB lalu menggabungkannya berurutan.
+  loadTelemetry(days?: number): Promise<TelemetryPoint[]>;
   subscribeProfile(cb: (profile: GreenhouseProfile | null) => void): () => void;
   saveProfile(profile: GreenhouseProfile): Promise<void>;
   // Tulis pengaturan batas otomatis (sudah divalidasi di UI).
   saveThresholds(thresholds: ThresholdConfig): Promise<void>;
   // Kirim Kontrol Manual Sementara.
   sendCommand(cmd: ManualCommand): Promise<void>;
+  // Muat telemetry satu tanggal WIB tertentu (format "YYYY-MM-DD").
+  loadTelemetryDay?(dateId: string): Promise<TelemetryPoint[]>;
+  // Auth lokal (hanya Firebase). Mock tidak punya login.
+  signIn?(email: string, password: string): Promise<void>;
+  signOut?(): Promise<void>;
+  observeAuth?(cb: (email: string | null) => void): () => void;
 }
 
 export function newCommandId(): string {

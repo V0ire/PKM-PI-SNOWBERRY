@@ -5,98 +5,86 @@
 #include <BH1750.h>
 #include "config.h"
 #include "control.h"
-#include "sensor_health.h"
+#include "sensor_safety.h"
 
 namespace {
 Adafruit_SHT31 g_sht;
 BH1750 g_bh;
-bool g_shtOk = false;
-bool g_bhOk = false;
-uint8_t g_shtFails = 0;
-uint8_t g_bhFails = 0;
-sensor_health::StuckDetector g_bhStuck;
-
-}  // namespace
+bool g_shtOk;
+bool g_bhOk;
+uint8_t g_shtFails;
+uint8_t g_bhFails;
+uint8_t g_soilFails;
+sensor_safety::Bh1750Health g_bhHealth;
+void increment(uint8_t& value) { if (value < UINT8_MAX) ++value; }
+void probe() {
+  if (!g_shtOk) g_shtOk = g_sht.begin(i2c_addr::SHT30);
+  if (!g_bhOk) {
+    g_bhHealth.reset();
+    g_bhOk = g_bh.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, i2c_addr::BH1750);
+  }
+}
+}
 
 namespace sensors {
-
 bool begin() {
   Wire.begin(pins::I2C_SDA, pins::I2C_SCL);
   Wire.setClock(100000);
-  delay(100);  // Beri waktu hardware bus stabil
   analogReadResolution(12);
   analogSetPinAttenuation(pins::SOIL_ADC, ADC_11db);
-
-
-  g_shtOk = g_sht.begin(i2c_addr::SHT30);
-  g_bhOk = g_bh.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, i2c_addr::BH1750);
+  probe();
   return g_shtOk || g_bhOk;
 }
-
 void recoverI2C() {
-  // Bit-bang 9 clock untuk melepas slave yang menahan SDA.
   pinMode(pins::I2C_SCL, OUTPUT);
   pinMode(pins::I2C_SDA, INPUT_PULLUP);
-  for (int i = 0; i < 9; i++) {
+  for (int i = 0; i < 9; ++i) {
     digitalWrite(pins::I2C_SCL, HIGH); delayMicroseconds(5);
-    digitalWrite(pins::I2C_SCL, LOW);  delayMicroseconds(5);
+    digitalWrite(pins::I2C_SCL, LOW); delayMicroseconds(5);
   }
   Wire.begin(pins::I2C_SDA, pins::I2C_SCL);
   Wire.setClock(100000);
+  g_shtOk = g_bhOk = false;
+  g_bhHealth.reset();
+  probe();
 }
-
-void read(const Thresholds& t, SensorReading& out, Fault& sensorFault, uint32_t nowMs) {
-  sensorFault = Fault::NONE;
-
-  // --- SHT30 ---
-  float temp = g_shtOk ? g_sht.readTemperature() : NAN;
-  float rh = g_shtOk ? g_sht.readHumidity() : NAN;
-  if (!isnan(temp) && !isnan(rh) && temp >= -20 && temp <= 60 && rh >= 0 && rh <= 100) {
+void read(const Thresholds& thresholds, SensorReading& out, Fault& fault, uint32_t nowMs) {
+  fault = Fault::NONE;
+  const float temp = g_shtOk ? g_sht.readTemperature() : NAN;
+  const float rh = g_shtOk ? g_sht.readHumidity() : NAN;
+  if (isfinite(temp) && isfinite(rh) && temp >= -40 && temp <= 125 && rh >= 0 && rh <= 100) {
     out.temperature_c = temp; out.humidity_pct = rh;
-    out.temp_valid = true; out.rh_valid = true;
-    out.temp_updated_ms = out.rh_updated_ms = nowMs;
-    g_shtFails = 0;
+    out.temp_valid = out.rh_valid = true; out.rh_sample_ms = nowMs; g_shtFails = 0;
   } else {
-    out.temp_valid = false; out.rh_valid = false;
-    if (++g_shtFails >= timing::SENSOR_FAIL_THRESHOLD) sensorFault = Fault::SHT30_ERROR;
+    out.temp_valid = out.rh_valid = false; increment(g_shtFails);
+    if (g_shtFails >= timing::SENSOR_FAIL_THRESHOLD) { fault = Fault::SHT30_ERROR; g_shtOk = false; }
   }
-
-  // --- BH1750 ---
-  float lux = g_bhOk ? g_bh.readLightLevel() : -1.0f;
-  if (lux >= 0 && lux <= 120000 && g_bhStuck.update(lux,nowMs)) {
-    out.lux = lux; out.lux_valid = true; out.lux_updated_ms=nowMs; g_bhFails = 0;
+  const float lux = g_bhOk ? g_bh.readLightLevel() : -1;
+  if (g_bhHealth.accept(lux, nowMs)) {
+    out.lux = lux; out.lux_valid = true; out.lux_sample_ms = nowMs; g_bhFails = 0;
   } else {
-    out.lux_valid = false;
-    if (++g_bhFails >= timing::SENSOR_FAIL_THRESHOLD && sensorFault == Fault::NONE)
-      sensorFault = Fault::BH1750_ERROR;
-  }
-
-  // Jika kedua sensor I2C gagal beruntun, curigai bus macet -> recover.
-  if (g_shtFails >= timing::SENSOR_FAIL_THRESHOLD &&
-      g_bhFails >= timing::SENSOR_FAIL_THRESHOLD) {
-    sensorFault = Fault::I2C_BUS_STUCK;
-    recoverI2C();
-  }
-
-  // --- Soil ---
-  uint32_t acc = 0;
-  for (int i = 0; i < 8; i++) acc += analogRead(pins::SOIL_ADC);
-  out.soil_raw_adc = static_cast<uint16_t>(acc / 8);
-  float pct;
-  if (control::soilPercent(t, out.soil_raw_adc, pct)) {
-    out.soil_pct = pct; out.soil_valid = true; out.soil_updated_ms=nowMs;
-  } else {
-    out.soil_valid = false;
-    if (t.soil_adc_dry == 0 || t.soil_adc_wet == 0) {
-      if (sensorFault == Fault::NONE) sensorFault = Fault::SOIL_CALIBRATION_MISSING;
-    } else if (sensorFault == Fault::NONE) {
-      sensorFault = Fault::SOIL_SENSOR_ERROR;
+    out.lux_valid = false; increment(g_bhFails);
+    if (g_bhFails >= timing::SENSOR_FAIL_THRESHOLD) {
+      if (fault == Fault::NONE) fault = Fault::BH1750_ERROR;
+      // Re-probe transport failures. A plausible repeated value remains invalid
+      // until it changes; reinitializing would incorrectly clear stuck history.
+      if (!isfinite(lux) || lux < 0 || lux > sensor_safety::BH1750_MAX_LUX) g_bhOk = false;
     }
   }
-
-  // GPIO35 tidak dipakai di Rev B. Jangan buat fault dari input floating.
-  out.psu_voltage = 0;
-  out.psu_valid = false;
+  uint32_t total = 0;
+  for (int i = 0; i < 8; ++i) total += analogRead(pins::SOIL_ADC);
+  out.soil_raw_adc = static_cast<uint16_t>(total / 8);
+  float pct;
+  if (control::soilPercent(thresholds, out.soil_raw_adc, pct)) {
+    out.soil_pct = pct; out.soil_valid = true; out.soil_sample_ms = nowMs; g_soilFails = 0;
+  } else {
+    out.soil_valid = false; increment(g_soilFails);
+    if (fault == Fault::NONE) fault = Fault::SOIL_SENSOR_ERROR;
+  }
+  out.psu_voltage = 0; out.psu_valid = false;
+  if (g_shtFails >= timing::SENSOR_FAIL_THRESHOLD && g_bhFails >= timing::SENSOR_FAIL_THRESHOLD) {
+    fault = Fault::I2C_BUS_STUCK;
+    recoverI2C();
+  } else if (!g_shtOk || !g_bhOk) probe();
 }
-
-}  // namespace sensors
+}

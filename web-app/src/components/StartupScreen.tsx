@@ -12,7 +12,7 @@ export function StartupScreen({
   const facts = [
     "Kelembapan tinggi terlalu lama dapat meningkatkan risiko jamur pada tanaman stroberi.",
     "Media tanam yang terlalu basah dapat mengurangi udara untuk akar.",
-    "Cahaya dan lampu tanam dicatat terpisah agar kondisi tanaman lebih mudah dipantau.",
+    "Lampu tanam menyala otomatis saat cahaya matahari kurang.",
   ];
   const [factIndex, setFactIndex] = useState(0);
   useEffect(() => {

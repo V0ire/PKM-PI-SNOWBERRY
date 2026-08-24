@@ -28,10 +28,15 @@ int main(){
   CHECK(strstr(buf,"\"last_seen\":1751457600000"),"last_seen epoch");
 
   char tel[512];
-  size_t m=status_json::buildTelemetrySample(tel,sizeof tel,"14:05",s,Fault::PUMP_NO_EFFECT);
+  size_t m=status_json::buildTelemetrySample(tel,sizeof tel,1751457600000LL,s);
   CHECK(m>0,"buildTelemetry menulis buffer");
-  CHECK(strstr(tel,"\"t\":\"14:05\""),"telemetry t");
-  CHECK(strstr(tel,"\"fc\":\"PUMP_NO_EFFECT\""),"telemetry fault code");
+  CHECK(strstr(tel,"\"t\":22.4"),"telemetry t number");
+  CHECK(strstr(tel,"\"h\":78.1"),"telemetry h number");
+  CHECK(strstr(tel,"\"l\":3200"),"telemetry l number");
+  CHECK(strstr(tel,"\"s\":62.5"),"telemetry s number");
+  CHECK(strstr(tel,"\"gl\":false"),"telemetry gl bool");
+  CHECK(strstr(tel,"\"p\":false") && strstr(tel,"\"m\":false") && strstr(tel,"\"f\":false"),"telemetry p/m/f bool");
+  CHECK(strstr(tel,"\"ts\":1751457600000"),"telemetry ts epoch ms");
 
   printf("\n%s\n", failed==0?"ALL PASSED":"SOME FAILED");
   return failed==0?0:1;

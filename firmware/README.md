@@ -1,76 +1,52 @@
-# Snowberry — Firmware ESP32 (local-first)
+# Snowberry Rev B isolated firmware
 
-Kontrol utama ada di ESP32. WiFi/Firebase hanya untuk monitoring, pengaturan,
-dan, setelah device auth diprovisikan, Kontrol Manual Sementara. Build ini
-menolak operasi Firestore tanpa auth. Jika WiFi/Firebase mati, ESP32 tetap bekerja
-memakai threshold terakhir di NVS.
+`PASS WITH REQUIRED PHYSICAL TESTS` is the highest software-only result.
 
-Sumber kebenaran Rev B:
-- Pin & fail-safe: `docs/07-finalization/HARDWARE_FIRMWARE_CONTRACT.md`
-- Kontrak data: `docs/03-technical/api-contract.md`
+This project is isolated from `snowberry-history-4fe5c3a`. Do not copy it back or
+connect actuator loads until the software commands and physical gates pass.
 
-## Struktur
-- `include/config.h` — pin map, polaritas, timing (dari wiring-schematic).
-- `include/types.h` — Thresholds, SensorReading, ActuatorState, Fault.
-- `src/actuators.cpp` — safe-state boot (menulis OFF level sebelum pinMode), polaritas HIGH/LOW, min ON/OFF time.
-- `src/control.cpp` — logika inti (bang-bang + hysteresis + pulse/soak).
-- `src/sensors.cpp` — SHT30, BH1750, soil ADC, freshness/stuck checks, I2C recovery.
-- `src/storage.cpp` — NVS threshold, kalibrasi soil, pump budget, boot count.
-- `src/status_json.cpp` — builder JSON status/telemetry (kontrak Firestore).
-- `include/firebase_sync.h` — seam integrasi Firebase (non-blocking).
-- `src/main.cpp` — orkestrasi loop.
+## Hardware contract
 
-## Decision Priority (control::step)
-1. Boot safe-state (semua aktuator OFF sebelum WiFi/Firebase/sensor)
-2. Fault / hardware safety OFF
-3. Sensor invalid safety OFF
-4. Manual override valid & aman (hard-safety tetap menang)
-5. Auto control lokal
-6. Default OFF
+All outputs use `LOW=OFF`, `HIGH=ON` and are latched LOW before `pinMode(OUTPUT)`:
 
-## Logika kontrol
-- **Humidifier**: RH <= rh_low menyalakan mist 1, fan 1, mist 2, fan 2 bersama.
-  RH >= rh_high mematikan semua; invalid/stale RH selalu mematikan semua.
-- **Pump**: pulse 10 detik + soak 10 menit. Maksimal dua start per rolling lima jam,
-  termasuk request manual; reservasi disimpan sebelum GPIO17 ON. Fault jujur:
-  `PUMP_NO_EFFECT` (periksa air/selang/nozzle/sensor — TIDAK klaim relay),
-  `PUMP_MAX_CYCLE_REACHED`. Pump OFF jika soil invalid / belum kalibrasi.
-- **Growlight**: lux < lux_low DAN waktu sinkron, dalam light_window, DAN belum lewat
-  max_light_hours_per_day. Cegah "hari panjang" tak sengaja (photoperiod).
-  Jika lux invalid/stale atau waktu belum sinkron: selalu OFF.
+- GPIO16 Growlight
+- GPIO25 Spare SSR, permanently OFF
+- GPIO17 Pump
+- GPIO18 Mist 1
+- GPIO19 Fan 1
+- GPIO23 Mist 2
+- GPIO32 Fan 2
 
-## Kalibrasi soil
-GPIO33 calibration entry disabled in field build so held/shorted button cannot
-block safety control. Provision calibration through controlled service build.
-Calibration helper retains two-minute stage deadlines. Nilai `adc_dry`/`adc_wet` disimpan ke NVS.
-Sebelum kalibrasi ada, soil dianggap invalid dan pump AUTO OFF.
+GPIO27 alternates every 500 ms from the local main loop. GPIO33 runs the
+non-blocking local soil-calibration state machine. Local calibration defaults are
+dry `3500`, wet `1500`; Firebase cannot replace them.
 
-## Uji di host (tanpa hardware)
-```
-bash firmware/test/run_host_tests.sh
-```
-Menguji logika kontrol & timing manual (27 cek), urutan boot safe-state (1 cek), dan builder JSON kontrak (11 cek) memakai
-mock Arduino layer.
+## Software gates
 
-## Build ke ESP32
-```
-pio run                 # butuh PlatformIO + koneksi internet untuk lib
-pio run -t upload
-pio device monitor
+```bash
+cd /home/caradhina/Project/snowberry-standalone-test
+bash test/run_host_tests.sh
+pio run -e esp32dev
+pio run -e measurement
+pio run -e gpio17-test
 ```
 
-## Integrasi Firebase
-Field build saat ini sengaja menonaktifkan remote Firestore sampai akun device
-terautentikasi tersedia. Wi-Fi/NTP tetap non-blocking; kontrol lokal tetap aktif.
-`include/firebase_sync.h` adalah seam provisioning berikut:
-- Login device (email/password khusus device, credential dari NVS — bukan hardcode).
-- `fetchThresholds` -> validasi -> simpan NVS.
-- `publishStatus` (status_json) tiap ~60s / saat perubahan.
-- `pollCommand` tiap ~10s -> isi control::ManualCommand -> `publishAck`.
-- `appendTelemetry` -> flush 1 dokumen/hari.
-Tidak ada HTTPS/TLS sinkron di safety loop.
+Only `esp32dev`, `measurement`, and explicitly isolated `gpio17-test` remain.
+Upload production firmware with `pio run -e esp32dev -t upload` unless a test
+environment was explicitly requested.
 
-## Catatan hardware
-- GPIO35 tidak digunakan pada Rev B.
-- Semua output Rev B GPIO16,25,17,18,19,23,32 aktif-HIGH dan diinisialisasi LOW.
-- Tidak pakai RTC; growlight fail-OFF sampai NTP sinkron.
+## Physical gates
+
+1. Twenty cold boots.
+2. Twenty EN resets.
+3. No output glitches.
+4. External 5 V-only boot.
+5. Wi-Fi absent and wrong-password operation.
+6. Internet, NTP, and Firebase failures while local control continues.
+7. Manual pump runtime remains at or below 45 seconds.
+8. Reboot does not restore pump budget.
+9. Sensor disconnects force related outputs OFF.
+10. All four humidifier channels switch together.
+11. Two-hour headless run records heartbeat, heap, and loop latency.
+
+Commanded GPIO state is not proof of relay, pump, fan, mist, or lamp operation.

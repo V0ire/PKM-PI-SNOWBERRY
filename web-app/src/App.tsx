@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { ConfirmManualModal } from "./components/ConfirmManualModal";
 import { ConfirmRewaterModal } from "./components/ConfirmRewaterModal";
+import { LoginScreen } from "./components/LoginScreen";
 import { StartupScreen } from "./components/StartupScreen";
 import { useSnowberryData } from "./services/useSnowberryData";
 import { newCommandId } from "./services/dataSource";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { CheckPage } from "./pages/CheckPage";
+import { ThresholdsPage } from "./pages/ThresholdsPage";
 import type { ActuatorKey, Page } from "./types";
 import { getConnectionState } from "./utils/status";
 
@@ -22,7 +24,7 @@ function ackFallbackMessage(status: string) {
 export default function App() {
   const data = useSnowberryData();
   const [page, setPage] = useState<Page>("dashboard");
-  const [isLoading, setIsLoading] = useState(true);
+  const isLoading = false; // skeleton palsu dihapus: konten tampil begitu data siap
   const [thresholds, setThresholds] = useState(data.thresholds);
   const [status, setStatus] = useState(data.status);
   const [manualCandidate, setManualCandidate] = useState<ActuatorKey | null>(null);
@@ -33,7 +35,6 @@ export default function App() {
   );
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
-  const [startupElapsed, setStartupElapsed] = useState(false);
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [checks, setChecks] = useState<import("./types").DailyCheckItem[]>([]);
 
@@ -43,14 +44,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setStartupElapsed(true), 3000);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     if (data.statusReady) return;
     const timer = window.setTimeout(() => {
-      setStartupElapsed(true);
       setStartupTimedOut(true);
       setToast("Data greenhouse belum masuk. Cek listrik box Snowberry dan koneksi Wi-Fi. Hubungi tim teknis jika masalah berlanjut.");
     }, 15_000);
@@ -86,12 +81,6 @@ export default function App() {
   }, [data.thresholds]);
 
   useEffect(() => {
-    setIsLoading(true);
-    const timer = window.setTimeout(() => setIsLoading(false), 450);
-    return () => window.clearTimeout(timer);
-  }, [page]);
-
-  useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 2800);
     return () => window.clearTimeout(timer);
@@ -115,12 +104,18 @@ export default function App() {
   }, [now]);
 
   const connection = getConnectionState(status, now);
-  const canOpenApp = startupElapsed && (data.statusReady || startupTimedOut);
+  // Tidak ada lagi splash minimum: masuk segera begitu data pertama tiba
+  // (fallback 15 detik tetap ada untuk perangkat yang benar-benar mati).
+  const canOpenApp = data.statusReady || startupTimedOut;
 
   const actuators = status.actuators || {};
   const rewaterState = actuators.pump ? actuators.pump.state : false;
 
   if (!canOpenApp) return <StartupScreen showSetup={false} onSave={() => {}} />;
+
+  // Firebase: cek sesi dulu, lalu minta login sebelum data disentuh.
+  if (data.source === "firebase" && !data.authReady) return <StartupScreen showSetup={false} onSave={() => {}} />;
+  if (data.needsLogin) return <LoginScreen onSignIn={data.signIn} />;
 
   if (data.statusReady && !data.profile) {
     return <StartupScreen showSetup onSave={(profile) => void data.saveProfile(profile)} />;
@@ -144,7 +139,7 @@ export default function App() {
       setSendingActuator(key);
       setPendingAck({ commandId, actuator: key, timeoutAt: Date.now() + 20_000 });
     }
-    void data.sendCommand({
+    data.sendCommand({
       command_id: commandId,
       actuator: key,
       mode,
@@ -153,6 +148,14 @@ export default function App() {
       manual_until: manualUntil,
       issued_at: Date.now(),
       issued_by: "web_user",
+    }).catch(() => {
+      // Gagal tulis ke server (mis. koneksi putus): jangan biarkan pengguna
+      // menunggu timeout ack 20 detik untuk tahu perintah tidak terkirim.
+      if (track) {
+        setSendingActuator(null);
+        setPendingAck(null);
+      }
+      setToast("Perintah gagal terkirim. Periksa koneksi internet lalu coba lagi.");
     });
   };
 
@@ -164,16 +167,23 @@ export default function App() {
     const commandId = newCommandId();
     setSendingActuator("pump");
     setPendingAck({ commandId, actuator: "pump", timeoutAt: Date.now() + 20_000 });
-    void data.sendCommand({
+    // Satu siklus siram penuh (pulse 45 s + awal soak). Durasi terlalu pendek
+    // membuat firmware menilai perintah EXPIRED sebelum pulse dimulai.
+    const manualUntil = Date.now() + 90_000;
+    data.sendCommand({
       command_id: commandId,
       actuator: "pump",
       mode: "MANUAL",
       state: true,
       command_type: "REWATER",
-      manual_duration_ms: 1,
-      manual_until: null,
+      manual_duration_ms: 90_000,
+      manual_until: manualUntil,
       issued_at: Date.now(),
       issued_by: "web_user",
+    }).catch(() => {
+      setSendingActuator(null);
+      setPendingAck(null);
+      setToast("Perintah gagal terkirim. Periksa koneksi internet lalu coba lagi.");
     });
   };
 
@@ -183,6 +193,8 @@ export default function App() {
       connection={connection}
       toast={toast}
       onPageChange={setPage}
+      accountEmail={data.authEmail}
+      onSignOut={() => void data.signOut()}
     >
       {page === "dashboard" && (
         <DashboardPage
@@ -253,8 +265,25 @@ export default function App() {
         />
       )}
 
-      {page === "history" && <HistoryPage history={data.telemetry} isLoading={isLoading} />}
+      {page === "history" && (
+        <HistoryPage
+          history={data.telemetry}
+          isLoading={isLoading}
+          thresholds={data.thresholds}
+          loadRange={data.loadRange}
+          loadDay={data.loadDay}
+        />
+      )}
       {page === "check" && <CheckPage checks={checks} onBack={() => setPage("dashboard")} />}
+      {page === "settings" && (
+        <ThresholdsPage
+          thresholds={thresholds}
+          connection={connection}
+          isLoading={!data.statusReady}
+          onSave={(next) => void data.saveThresholds(next)}
+          onToast={setToast}
+        />
+      )}
 
       {rewaterCandidate && (
         <ConfirmRewaterModal

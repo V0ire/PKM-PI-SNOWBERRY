@@ -65,7 +65,11 @@ export function ActuatorCard({
             : copy.automaticText}
       </p>
       {isManual && <p className="countdown">Sisa waktu manual: {formatCountdown(actuator.manual_until, now)}</p>}
-      {availability === "sending" && <p className="disabled-note">{actuator.state ? `Mematikan ${copy.label.toLowerCase()}...` : `Menyalakan ${copy.label.toLowerCase()}...`}</p>}
+      {availability === "sending" && (
+        <p className="disabled-note sending-note" role="status">
+          {actuator.state ? `Mematikan ${copy.label.toLowerCase()}...` : `Menyalakan ${copy.label.toLowerCase()}...`}
+        </p>
+      )}
       {disabled && availability !== "sending" && <p className="disabled-note">{availabilityVisual.message}</p>}
       <div className="button-row">
         {!isManual ? (

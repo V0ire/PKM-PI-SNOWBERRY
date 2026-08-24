@@ -14,3 +14,5 @@ firebase/.runtimeconfig.json
 *.log
 firmware/include/measurement_config.local.h
 firmware/include/firebase_config.local.h
+.firebase/
+firmware/firebase/

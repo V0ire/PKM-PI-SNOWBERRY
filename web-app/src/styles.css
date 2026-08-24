@@ -287,7 +287,7 @@ main {
 .eyebrow {
   color: var(--color-green);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -318,7 +318,7 @@ main {
   background: var(--status-safe-bg);
   color: var(--status-safe-text);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -455,7 +455,7 @@ main {
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-card);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .hero-badge.tone-safe {
@@ -485,7 +485,7 @@ main {
 
 .hero-action {
   color: var(--color-green-dark) !important;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .issue-list {
@@ -512,7 +512,7 @@ main {
 .hero-updated {
   color: var(--color-text-soft);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 /* ═══ SENSOR GAUGE GRID ═══ */
@@ -840,7 +840,7 @@ main {
 .phase-risk span {
   color: var(--color-text-soft);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -853,7 +853,7 @@ main {
 .mini-condition em {
   color: var(--color-green-dark);
   font-style: normal;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .mini-condition.tone-warning {
@@ -932,7 +932,7 @@ main {
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -1000,7 +1000,7 @@ main {
   background: var(--color-ceramic);
   color: var(--color-text-soft);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .sensor-value {
@@ -1031,7 +1031,7 @@ main {
 .mode-line,
 .countdown {
   color: var(--color-green-dark);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .button-row,
@@ -1055,7 +1055,7 @@ main {
   background: transparent;
   box-shadow: none;
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 700;
   transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -1197,7 +1197,7 @@ main {
   display: grid;
   gap: 8px;
   color: var(--color-text);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .field input,
@@ -1291,7 +1291,7 @@ main {
   background: transparent;
   color: var(--color-text-soft);
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .greenhouse-hero {
@@ -1318,21 +1318,21 @@ main {
 .hero-copy h1 { color: white; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,.28); }
 .hero-copy p { color: rgba(255,255,255,.86); }
 .hero-meta { display: flex; flex-wrap: wrap; gap: 8px; }
-.hero-meta span { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border-radius: var(--radius-pill); background: rgba(255,255,255,.13); color: #fff; font-size: 11px; font-weight: 800; }
-.hero-action { color: #fff !important; font-size: 14px; font-weight: 800; }
-.hero-check-link { justify-self: start; min-height: 32px; padding: 0; border: 0; background: transparent; color: #d4e9e2; font-weight: 800; text-decoration: underline; }
+.hero-meta span { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border-radius: var(--radius-pill); background: rgba(255,255,255,.13); color: #fff; font-size: 11px; font-weight: 700; }
+.hero-action { color: #fff !important; font-size: 14px; font-weight: 700; }
+.hero-check-link { justify-self: start; min-height: 32px; padding: 0; border: 0; background: transparent; color: #d4e9e2; font-weight: 700; text-decoration: underline; }
 .check-page { padding-top: 28px; }
 .page-heading { display: grid; gap: 8px; }
 .page-heading h1 { color: var(--color-green); font-size: 28px; }
 .check-detail { display: grid; gap: 9px; padding: 18px; border-left: 5px solid var(--status-warning-border); border-radius: var(--radius-card); background: var(--color-card); box-shadow: var(--shadow-card); }
-.check-detail > span { color: var(--status-warning-text); font-size: 12px; font-weight: 800; }
+.check-detail > span { color: var(--status-warning-text); font-size: 12px; font-weight: 700; }
 .check-detail h2, .check-detail strong { color: var(--color-green-dark); }
 .check-detail.tone-danger { border-left-color: var(--status-danger-border); background: var(--status-danger-bg); }
 .check-detail.tone-danger > span, .check-detail.tone-danger h2, .check-detail.tone-danger strong { color: var(--status-danger-text); }
 .plant-walkthrough { display: grid; gap: 14px; padding: 22px; border-left: 5px solid var(--status-safe-border); border-radius: var(--radius-card); background: var(--color-card); box-shadow: var(--shadow-card); }
 .plant-walkthrough.tone-warning { border-left-color: var(--status-warning-border); }
 .plant-walkthrough.tone-danger { border-left-color: var(--status-danger-border); background: var(--status-danger-bg); }
-.plant-progress { color: var(--color-text-soft); font-size: 12px; font-weight: 800; }
+.plant-progress { color: var(--color-text-soft); font-size: 12px; font-weight: 700; }
 .plant-walkthrough h2, .plant-walkthrough > strong { color: var(--color-green-dark); }
 .plant-value { font-size: 28px; }
 .walkthrough-actions { display: flex; gap: 10px; margin-top: 6px; }
@@ -1344,7 +1344,7 @@ main {
 .history-summary.tone-warning { border-left: 5px solid var(--status-warning-border); }
 .history-summary.tone-safe { border-left: 5px solid var(--status-safe-border); }
 .chart-switcher { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 6px; border-radius: var(--radius-pill); background: var(--color-ceramic); }
-.chart-switcher button { min-height: 40px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--color-text-soft); font-size: 12px; font-weight: 800; }
+.chart-switcher button { min-height: 40px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--color-text-soft); font-size: 12px; font-weight: 700; }
 .chart-switcher button.active { background: var(--color-card); color: var(--color-green); box-shadow: 0 1px 4px rgba(30,57,50,.1); }
 .chart-grid-single { grid-template-columns: 1fr; }
 .light-guidance { display: grid; gap: 6px; padding: 12px; border-radius: 14px; background: var(--color-card-soft); }
@@ -1399,7 +1399,7 @@ main {
 .metric-mini-card span {
   color: var(--color-text-soft);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1435,35 +1435,137 @@ main {
 .measurement-record span {
   color: var(--color-green-dark);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .chart-card svg {
+  display: block;
   width: 100%;
-  height: 170px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
-.chart-card line {
-  stroke: var(--color-border);
+/* Plot piksel-sungguhan: tanpa distorsi, drag/tap untuk inspeksi. */
+.chart-card .chart-plot {
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.chart-card .chart-grid-line {
+  stroke: rgba(30, 57, 50, 0.08);
   stroke-width: 1;
 }
 
-.chart-card polyline {
+.chart-card .chart-tick-label {
+  fill: var(--color-text-soft);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.chart-card .chart-threshold-line {
+  stroke: var(--color-warning);
+  stroke-dasharray: 2 4;
+  stroke-width: 1;
+  opacity: 0.55;
+}
+
+.chart-card .chart-line {
   fill: none;
   stroke: var(--color-green-action);
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 4;
+  stroke-width: 2;
 }
 
-.chart-card circle {
-  fill: var(--color-green-dark);
+/* Pita fluktuasi min–max riwayat. */
+.chart-card .chart-band {
+  fill: var(--color-green-action);
+  opacity: 0.13;
+  stroke: none;
+}
+
+/* Inspeksi tap/geser pada grafik riwayat. pan-y = scroll vertikal tetap jalan. */
+.chart-card .chart-cursor line {
+  stroke: rgba(30, 57, 50, 0.35);
+  stroke-width: 1;
+}
+
+.chart-card .chart-cursor circle {
+  fill: #fff;
+  stroke: var(--color-green-dark);
+  stroke-width: 2;
+}
+
+.chart-card .chart-cursor-span {
+  stroke: var(--color-green-action);
+  stroke-opacity: 0.5;
+  stroke-linecap: round;
+  stroke-width: 5;
+}
+
+/* Riwayat Harian: naik-turun per hari, bukan hanya rata-rata. */
+.daily-history {
+  margin-top: 4px;
+}
+
+.daily-history h2 {
+  margin-bottom: 2px;
+}
+
+.daily-history > p {
+  color: var(--color-text-muted, var(--color-text));
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+
+.daily-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.daily-list li {
+  background: var(--color-card-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+}
+
+.daily-list strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.daily-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px 14px;
+}
+
+.daily-metrics span {
+  color: var(--color-text-soft);
+  font-size: 12.5px;
+}
+
+/* Umpan balik instan saat perintah manual dalam perjalanan (REQ-5). */
+.sending-note {
+  animation: sending-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sending-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 .chart-current {
   color: var(--color-green-dark);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .chart-stats {
@@ -1480,7 +1582,7 @@ main {
   background: var(--color-card-soft);
   color: var(--color-text-soft);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.3;
 }
 
@@ -1552,7 +1654,7 @@ main {
 
 .target-card dd {
   color: var(--color-green-dark);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .phase-advice-card {
@@ -1617,7 +1719,7 @@ main {
   left: 16px;
   z-index: 9;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
   max-width: 680px;
   min-height: var(--bottom-nav-height);
@@ -1831,4 +1933,89 @@ main {
   .companion-insights {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+/* === Login (2026-08-24) ================================================== */
+.login-error {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--color-danger-soft);
+  border-left: 4px solid var(--status-danger-border);
+  color: var(--status-danger-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.login-note {
+  font-size: 12px;
+  color: var(--color-text-soft);
+  text-align: center;
+}
+
+/* === Tombol keluar di top bar ============================================ */
+.topbar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text-soft);
+}
+
+.topbar-icon-btn:active {
+  transform: scale(0.95);
+}
+
+/* === Toolbar grafik interaktif (zoom/pan/reset) ========================== */
+.chart-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-green);
+}
+
+.chart-tool-btn:disabled {
+  opacity: 0.35;
+}
+
+.chart-tool-btn:not(:disabled):active {
+  transform: scale(0.95);
+}
+
+.chart-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-soft);
+}
+
+/* === Pemilih tanggal & unduh CSV ========================================= */
+.day-picker-card {
+  display: grid;
+  gap: 8px;
+}
+
+.export-row {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.export-row p {
+  font-size: 12px;
 }

@@ -2,19 +2,23 @@ import type { ActuatorKey, GreenhouseProfile, RealtimeStatus, TelemetryPoint, Th
 import type { ManualCommand, SnowberryDataSource } from "./dataSource";
 import type { FirebaseEnv } from "./firebaseConfig";
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import {
+  browserLocalPersistence,
+  getAuth,
+  onAuthStateChanged,
+  setPersistence,
+  signInWithEmailAndPassword,
+  signOut as fbSignOut,
+  type User,
+} from "firebase/auth";
 import { doc, getDoc, getFirestore, onSnapshot, setDoc } from "firebase/firestore";
+import { jakartaDateDocIds, mergeTelemetryDocuments, type TelemetryDocument } from "../utils/historyData";
+
 
 // Adapter Firestore sesuai docs/03-technical/api-contract.md.
 // Paths: devices/{deviceId}/status/realtime, config/thresholds,
 //        config/commands, telemetry/{YYYY-MM-DD}
 //
-
-function todayDocId(): string {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 10);
-}
 
 function normalizeStatus(data: Partial<RealtimeStatus>): RealtimeStatus {
   const actuator = (key: ActuatorKey) => ({
@@ -95,12 +99,13 @@ export async function createFirebaseDataSource(env: FirebaseEnv): Promise<Snowbe
         if (snap.exists()) cb(snap.data() as ThresholdConfig);
       });
     },
-    async loadTelemetry(): Promise<TelemetryPoint[]> {
-      const ref = doc(db, `${base}/telemetry/${todayDocId()}`);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) return [];
-      const data = snap.data() as { d?: TelemetryPoint[]; samples?: TelemetryPoint[] };
-      return data.d ?? data.samples ?? [];
+    async loadTelemetry(days = 1): Promise<TelemetryPoint[]> {
+      const ids = jakartaDateDocIds(Date.now(), days);
+      const snapshots = await Promise.all(ids.map((id) => getDoc(doc(db, `${base}/telemetry/${id}`))));
+      const documents = snapshots
+        .filter((snapshot) => snapshot.exists())
+        .map((snapshot) => snapshot.data() as TelemetryDocument);
+      return mergeTelemetryDocuments(documents);
     },
     subscribeProfile(cb: (profile: GreenhouseProfile | null) => void) {
       return onSnapshot(deviceRef, (snap) => {
@@ -121,6 +126,22 @@ export async function createFirebaseDataSource(env: FirebaseEnv): Promise<Snowbe
     },
     async sendCommand(cmd: ManualCommand) {
       await setDoc(commandsRef, { ...cmd, issued_by: currentUid() });
+    },
+    async loadTelemetryDay(dateId: string): Promise<TelemetryPoint[]> {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateId)) return [];
+      const snapshot = await getDoc(doc(db, `${base}/telemetry/${dateId}`));
+      if (!snapshot.exists()) return [];
+      return mergeTelemetryDocuments([snapshot.data() as TelemetryDocument]);
+    },
+    async signIn(email: string, password: string) {
+      await setPersistence(auth, browserLocalPersistence);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+    },
+    async signOut() {
+      await fbSignOut(auth);
+    },
+    observeAuth(cb: (email: string | null) => void) {
+      return onAuthStateChanged(auth, (user: User | null) => cb(user?.email ?? null));
     },
   };
 }

@@ -1,40 +1,23 @@
 rules_version = '2';
+// Semua akses menuntut login (Firebase Auth).
+// - Akun petani (web): baca semua data perangkat, tulis command/thresholds/profil.
+// - Akun perangkat (ESP32): publish status/telemetry, baca config.
+// Keduanya memakai email/password; pembatasan per-role via custom claims
+// menyusul jika farm bertambah (lihat progress.md #12).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function profile() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-    function deviceAccount(deviceId) {
-      return signedIn() && profile().role == 'device' && profile().deviceId == deviceId;
-    }
-    function farmerOwns(deviceId) {
-      return signedIn() && profile().role == 'farmer' && deviceId in profile().devices;
-    }
 
-    match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      allow write: if false;
-    }
+    match /devices/snowberry-001 {
+      allow read: if signedIn();
+      allow create, delete: if false;
+      allow update: if signedIn();
 
-    match /devices/{deviceId}/status/{document} {
-      allow read: if farmerOwns(deviceId);
-      allow write: if deviceAccount(deviceId);
+      match /{document=**} {
+        allow read: if signedIn();
+        allow create, update: if signedIn();
+        allow delete: if false;
+      }
     }
-    match /devices/{deviceId}/telemetry/{document} {
-      allow read: if farmerOwns(deviceId);
-      allow write: if deviceAccount(deviceId);
-    }
-    match /devices/{deviceId}/config/{document} {
-      allow read: if deviceAccount(deviceId) || farmerOwns(deviceId);
-      // Field build remote control is disabled. Config stays immutable until
-      // authenticated command and threshold schema tests are deployed.
-      allow write: if false;
-    }
-    match /devices/{deviceId} {
-      allow read: if farmerOwns(deviceId) || deviceAccount(deviceId);
-      allow write: if false;
-    }
-    match /{document=**} { allow read, write: if false; }
   }
 }
