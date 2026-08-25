@@ -1,0 +1,17 @@
+[Unit]
+Description=Snowberry status-to-telemetry capture
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Sesuaikan path bila folder diletakkan di lokasi lain.
+WorkingDirectory=/opt/snowberry-capture
+ExecStart=/usr/bin/node /opt/snowberry-capture/capture.mjs /opt/snowberry-capture/config.local.json
+Restart=always
+RestartSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
