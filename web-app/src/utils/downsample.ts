@@ -1,19 +1,15 @@
 import type { TelemetryPoint } from "../types";
 
-export type RangeKey = "1h" | "6h" | "today" | "day" | "7d" | "30d";
+export type RangeKey = "today" | "day" | "7d" | "30d";
 
 export const RANGES: Array<{
   key: RangeKey;
   label: string;
   days: number;
   bucketMs: number;
-  // Potong data ke N milidetik terakhir (untuk rentang jam pada hari yang sama).
-  windowMs?: number;
-  // Dipakai untuk kalimat ringkasan, mis. "Kondisi 6 jam terakhir optimal".
+  // Dipakai untuk kalimat ringkasan, mis. "Kondisi 7 hari terakhir optimal".
   summaryLabel: string;
 }> = [
-  { key: "1h", label: "1 Jam", days: 1, bucketMs: 0, windowMs: 3_600_000, summaryLabel: "1 jam terakhir" },
-  { key: "6h", label: "6 Jam", days: 1, bucketMs: 0, windowMs: 6 * 3_600_000, summaryLabel: "6 jam terakhir" },
   { key: "today", label: "Hari Ini", days: 1, bucketMs: 0, summaryLabel: "hari ini" },
   { key: "day", label: "Tanggal", days: 1, bucketMs: 0, summaryLabel: "pada tanggal tersebut" },
   { key: "7d", label: "7 Hari", days: 7, bucketMs: 10 * 60_000, summaryLabel: "7 hari terakhir" },

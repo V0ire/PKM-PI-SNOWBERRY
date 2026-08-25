@@ -98,26 +98,20 @@ export function HistoryPage({
 
   const retryRange = useCallback(() => setRequestVersion((version) => version + 1), []);
   const loadedPoints = multiDay || pickDay ? (rangeData ?? []) : history;
-  // Rentang 1/6 jam: potong data hari ini ke jendela waktu terakhir.
-  const sourcePoints = useMemo(() => {
-    if (!range.windowMs) return loadedPoints;
-    const cutoff = Date.now() - range.windowMs;
-    return loadedPoints.filter((point) => point.ts >= cutoff);
-  }, [loadedPoints, range.windowMs]);
   const visibleHistory = useMemo(
-    () => downsample(sourcePoints, range.bucketMs),
-    [sourcePoints, range.bucketMs],
+    () => downsample(loadedPoints, range.bucketMs),
+    [loadedPoints, range.bucketMs],
   );
   const summary = useMemo(
-    () => buildHistorySummary(sourcePoints, multiDay, thresholds),
-    [sourcePoints, multiDay, thresholds],
+    () => buildHistorySummary(loadedPoints, multiDay, thresholds),
+    [loadedPoints, multiDay, thresholds],
   );
   const times = visibleHistory.map((point) => point.ts);
-  const growlightMinutes = growlightDurationMinutes(sourcePoints);
-  const hasIssue = hasHistoryIssue(sourcePoints, thresholds);
+  const growlightMinutes = growlightDurationMinutes(loadedPoints);
+  const hasIssue = hasHistoryIssue(loadedPoints, thresholds);
   const dailySummaries = useMemo(
-    () => buildDailySummaries(sourcePoints),
-    [sourcePoints],
+    () => buildDailySummaries(loadedPoints),
+    [loadedPoints],
   );
 
   const chartConfig = {
@@ -173,7 +167,7 @@ export function HistoryPage({
   return (
     <div className="page-stack">
       <SectionHero eyebrow="Pola Greenhouse" title="Riwayat Greenhouse">
-        <p>Lihat pola kondisi greenhouse per jam, per hari, atau unduh datanya untuk laporan.</p>
+        <p>Lihat pola kondisi greenhouse harian, pilih tanggal tertentu, atau unduh datanya untuk laporan.</p>
       </SectionHero>
 
       <section className="segmented" aria-label="Pilih rentang riwayat">
@@ -251,8 +245,8 @@ export function HistoryPage({
           </section>
 
           <section className="export-row">
-            <button className="btn outline" type="button" onClick={() => exportTelemetryCsv(sourcePoints, selectedDate)}>
-              <Download size={16} strokeWidth={2.2} aria-hidden="true" /> Unduh Data CSV ({sourcePoints.length} baris)
+            <button className="btn outline" type="button" onClick={() => exportTelemetryCsv(loadedPoints, selectedDate)}>
+              <Download size={16} strokeWidth={2.2} aria-hidden="true" /> Unduh Data CSV ({loadedPoints.length} baris)
             </button>
             <p>Format spreadsheet siap dipakai untuk laporan penelitian.</p>
           </section>

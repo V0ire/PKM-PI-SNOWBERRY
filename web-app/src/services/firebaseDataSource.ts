@@ -21,11 +21,19 @@ import { jakartaDateDocIds, mergeTelemetryDocuments, type TelemetryDocument } fr
 //
 
 function normalizeStatus(data: Partial<RealtimeStatus>): RealtimeStatus {
+  // Firmware lama (v1.0.0) mengirim pengabut+kipas sebagai satu grup
+  // "humidifier". Petakan ke mist & fan agar halaman Alat tetap jujur
+  // sampai perangkat di-flash ke kontrak baru.
+  const raw = { ...data.actuators } as Record<string, Partial<RealtimeStatus["actuators"][ActuatorKey]> | undefined>;
+  if (raw.humidifier && !raw.mist && !raw.fan) {
+    raw.mist = raw.humidifier;
+    raw.fan = raw.humidifier;
+  }
   const actuator = (key: ActuatorKey) => ({
-    mode: data.actuators?.[key]?.mode ?? "AUTO",
-    state: data.actuators?.[key]?.state ?? false,
-    manual_until: data.actuators?.[key]?.manual_until ?? null,
-    reason: data.actuators?.[key]?.reason,
+    mode: raw[key]?.mode ?? "AUTO",
+    state: raw[key]?.state ?? false,
+    manual_until: raw[key]?.manual_until ?? null,
+    reason: raw[key]?.reason,
   });
 
   return {
