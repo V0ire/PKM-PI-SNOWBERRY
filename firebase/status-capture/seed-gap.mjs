@@ -103,6 +103,7 @@ function generateDay(dateId, realSamples) {
   for (let min = 0; min < 1440; min += STEP_MIN) {
     const hour = min / 60;
     const ts = tsFor(dateId, hour);
+    if (ts > Date.now()) continue; // JANGAN pernah men-seed masa depan.
     if (nearReal(ts)) continue;
     out.push({
       t: { doubleValue: Math.round(interp(A.t, hour) * 10 + (Math.random() - 0.5) * 3) / 10 },
