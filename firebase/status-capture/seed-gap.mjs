@@ -22,8 +22,12 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? "") || Number.isNaN(startH) || Number.is
 }
 
 const STEP_MIN = 5; // grid 5 menit, konsisten dengan hari-hari sehat (±288 sampel/hari)
-// Jendela yang memuat sampel ASLI dari firmware lama — jangan ditimpa/diduplikasi.
-const SKIP_RANGES = [{ date: "2026-08-24", fromMin: 14 * 60 + 15, toMin: 15 * 60 + 15 }];
+// Jendela yang sudah terisi (data asli firmware / backfill sebelumnya / capture
+// live) — dilewati agar tidak ada sampel kembar.
+const SKIP_RANGES = [
+  { date: "2026-08-24", fromMin: 14 * 60 + 15, toMin: 15 * 60 + 15 }, // 49 sampel asli firmware lama
+  { date: "2026-08-25", fromMin: 0, toMin: 10 * 60 + 5 },             // backfill pagi + sampel capture 10:30
+];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

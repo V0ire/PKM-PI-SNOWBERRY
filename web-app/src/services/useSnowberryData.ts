@@ -53,6 +53,7 @@ export function useSnowberryData(): SnowberryData {
     let unThr = () => {};
     let unProfile = () => {};
     let unAuth = () => {};
+    let stopTelemetryRefresh = () => {};
 
     const startDataSubscriptions = (ds: SnowberryDataSource) => {
       unStatus = ds.subscribeStatus((next) => {
@@ -67,15 +68,28 @@ export function useSnowberryData(): SnowberryData {
           if (!cancelled) setTelemetry(points);
         })
         .catch((err) => console.warn("[snowberry] Riwayat hari ini gagal dimuat.", err));
+      // Telemetry tidak dilanggan realtime (dokumen harian besar), jadi muat
+      // ulang ringan tiap menit agar grafik "Hari Ini" tumbuh tanpa refresh.
+      const timer = window.setInterval(() => {
+        if (document.visibilityState === "hidden") return;
+        ds.loadTelemetry(1)
+          .then((points) => {
+            if (!cancelled) setTelemetry(points);
+          })
+          .catch(() => {});
+      }, 60_000);
+      stopTelemetryRefresh = () => window.clearInterval(timer);
     };
 
     const stopDataSubscriptions = () => {
       unStatus();
       unThr();
       unProfile();
+      stopTelemetryRefresh();
       unStatus = () => {};
       unThr = () => {};
       unProfile = () => {};
+      stopTelemetryRefresh = () => {};
     };
 
     async function boot() {
