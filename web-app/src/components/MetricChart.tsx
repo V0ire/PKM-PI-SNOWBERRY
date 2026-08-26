@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { formatDecimal, formatInteger } from "../utils/date";
-import { historyAxisLabel } from "../utils/historyData";
+import { historyAxisLabel, historyFullLabel } from "../utils/historyData";
 import { Card } from "./Card";
 
 const HEIGHT = 190;
@@ -272,7 +272,7 @@ export function MetricChart({
         <h3>{title}</h3>
         <span className="chart-current" role="status">
           {activePoint !== undefined && activeTime !== undefined
-            ? `${historyAxisLabel(activeTime, showDates)} · ${activeReadout}`
+            ? `${historyFullLabel(activeTime)} · ${activeReadout}`
             : valueLabel(latest, unit)}
         </span>
       </div>

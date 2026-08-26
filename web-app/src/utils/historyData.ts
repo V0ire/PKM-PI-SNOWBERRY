@@ -9,6 +9,13 @@ export function historyAxisLabel(timestamp: number, showDate: boolean): string {
   ).format(timestamp);
 }
 
+// Label lengkap untuk readout titik yang disentuh: tanggal + jam:menit WIB.
+export function historyFullLabel(timestamp: number): string {
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta",
+  }).format(timestamp);
+}
+
 // Firestore membagi riwayat berdasarkan tanggal WIB, bukan zona waktu browser.
 export function jakartaDateDocIds(nowMs: number, days: number): string[] {
   const count = Math.max(0, Math.floor(days));

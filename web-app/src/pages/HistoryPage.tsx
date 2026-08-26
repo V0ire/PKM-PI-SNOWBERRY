@@ -238,7 +238,7 @@ export function HistoryPage({
               values={chartConfig.values}
               bands={chartConfig.bands}
               times={times}
-              showDates={multiDay || pickDay}
+              showDates={multiDay}
               thresholdLow={chartConfig.thresholdLow}
               thresholdHigh={chartConfig.thresholdHigh}
             />
