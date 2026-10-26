@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Snowberry: Firmware ESP32 dan Web App",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1000,
+      520
+    ],
+    "repository": {
+      "url": "https://github.com/V0ire/PKM-PI-SNOWBERRY",
+      "revision": "0c0f85e17f2cb4242be64c134acc61d781fde8fb"
+    }
+  },
+  "components": [
+    {
+      "id": "petani",
+      "type": "external",
+      "label": "Petani",
+      "sublabel": "browser / ponsel",
+      "pos": [
+        40,
+        190
+      ],
+      "size": [
+        110,
+        62
+      ],
+      "sources": [
+        {
+          "path": "web-app/src/App.tsx"
+        }
+      ]
+    },
+    {
+      "id": "webapp",
+      "type": "frontend",
+      "label": "web-app (React/Vite)",
+      "sublabel": "Dashboard · Batas Otomatis · Kontrol Manual",
+      "pos": [
+        200,
+        160
+      ],
+      "size": [
+        180,
+        120
+      ],
+      "sources": [
+        {
+          "path": "web-app/src/App.tsx"
+        },
+        {
+          "path": "web-app/src/pages/DashboardPage.tsx"
+        },
+        {
+          "path": "web-app/src/pages/ThresholdsPage.tsx"
+        }
+      ]
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Firebase Auth",
+      "sublabel": "email / password",
+      "pos": [
+        210,
+        60
+      ],
+      "size": [
+        160,
+        62
+      ],
+      "sources": [
+        {
+          "path": "web-app/src/services/auth.ts"
+        }
+      ]
+    },
+    {
+      "id": "firestore",
+      "type": "database",
+      "label": "Firestore",
+      "sublabel": "status · config · telemetry",
+      "pos": [
+        205,
+        320
+      ],
+      "size": [
+        170,
+        80
+      ],
+      "sources": [
+        {
+          "path": "web-app/src/services/firebaseDataSource.ts"
+        }
+      ]
+    },
+    {
+      "id": "statusjson",
+      "type": "backend",
+      "label": "status_json.cpp",
+      "sublabel": "kontrak status & telemetry",
+      "pos": [
+        520,
+        60
+      ],
+      "size": [
+        170,
+        70
+      ],
+      "sources": [
+        {
+          "path": "firmware/src/status_json.cpp"
+        },
+        {
+          "path": "firmware/include/status_json.h"
+        }
+      ]
+    },
+    {
+      "id": "actuators",
+      "type": "backend",
+      "label": "actuators.cpp",
+      "sublabel": "safe-state · polaritas · min ON/OFF",
+      "pos": [
+        800,
+        60
+      ],
+      "size": [
+        170,
+        70
+      ],
+      "sources": [
+        {
+          "path": "firmware/src/actuators.cpp"
+        }
+      ]
+    },
+    {
+      "id": "sync",
+      "type": "backend",
+      "label": "firebase_sync",
+      "sublabel": "non-blocking seam",
+      "pos": [
+        525,
+        180
+      ],
+      "size": [
+        160,
+        80
+      ],
+      "sources": [
+        {
+          "path": "firmware/include/firebase_sync.h"
+        },
+        {
+          "path": "firmware/src/firebase_sync.cpp"
+        }
+      ]
+    },
+    {
+      "id": "loop",
+      "type": "backend",
+      "label": "main.cpp · control::step",
+      "sublabel": "prioritas keputusan lokal",
+      "pos": [
+        800,
+        170
+      ],
+      "size": [
+        170,
+        100
+      ],
+      "tag": "sumber keputusan",
+      "sources": [
+        {
+          "path": "firmware/src/main.cpp"
+        },
+        {
+          "path": "firmware/src/control.cpp"
+        }
+      ]
+    },
+    {
+      "id": "nvs",
+      "type": "database",
+      "label": "storage.cpp (NVS)",
+      "sublabel": "threshold · kalibrasi soil",
+      "pos": [
+        520,
+        330
+      ],
+      "size": [
+        160,
+        80
+      ],
+      "sources": [
+        {
+          "path": "firmware/src/storage.cpp"
+        }
+      ]
+    },
+    {
+      "id": "sensors",
+      "type": "external",
+      "label": "sensors.cpp",
+      "sublabel": "SHT30 · BH1750 · soil ADC",
+      "pos": [
+        800,
+        340
+      ],
+      "size": [
+        170,
+        70
+      ],
+      "sources": [
+        {
+          "path": "firmware/src/sensors.cpp"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "ESP32 · kontrol lokal tetap sumber utama",
+      "wraps": [
+        "statusjson",
+        "actuators",
+        "sync",
+        "loop",
+        "nvs",
+        "sensors"
+      ],
+      "pad": 24
+    }
+  ],
+  "connections": [
+    {
+      "from": "petani",
+      "to": "webapp",
+      "label": "HTTPS"
+    },
+    {
+      "from": "webapp",
+      "to": "auth",
+      "label": "login",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelAt": [
+        290,
+        142
+      ]
+    },
+    {
+      "from": "webapp",
+      "to": "firestore",
+      "label": "listen · write",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        290,
+        294
+      ]
+    },
+    {
+      "from": "firestore",
+      "to": "sync",
+      "label": "status · cmd"
+    },
+    {
+      "from": "sync",
+      "to": "loop",
+      "label": "threshold · perintah"
+    },
+    {
+      "from": "loop",
+      "to": "actuators",
+      "label": "safe-state",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "from": "loop",
+      "to": "sensors",
+      "label": "baca sensor",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        935,
+        302
+      ]
+    },
+    {
+      "from": "loop",
+      "to": "nvs",
+      "label": "threshold · kalibrasi",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [
+        [
+          885,
+          305
+        ],
+        [
+          600,
+          305
+        ]
+      ]
+    },
+    {
+      "from": "statusjson",
+      "to": "sync",
+      "label": "payload JSON",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        605,
+        144
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Kontrol Lokal",
+      "items": [
+        "control::step memutuskan lebih dulu, cloud hanya lapisan monitoring",
+        "WiFi/Firebase mati: threshold terakhir di NVS tetap dipakai",
+        "Boot selalu menulis safe-state OFF sebelum pinMode"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Jalur Web App",
+      "items": [
+        "React/Vite membaca Firestore lewat realtime listener",
+        "Batas Otomatis menulis config/thresholds",
+        "Kontrol Manual mengirim commands lewat modal konfirmasi"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Batas Kepercayaan",
+      "items": [
+        "firebase_sync non-blocking; kegagalan jaringan tidak menghentikan loop",
+        "Pump AUTO OFF saat soil invalid atau belum dikalibrasi",
+        "Hard-safety tetap menang atas manual override"
+      ]
+    }
+  ]
+}
